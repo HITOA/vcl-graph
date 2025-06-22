@@ -1,0 +1,3 @@
+[submodule "3rdParty/vcl"]
+	path = 3rdParty/vcl
+	url = https://github.com/HITOA/vcl.git
