@@ -1,8 +1,10 @@
 #pragma once
 
 #include <VCLG/Node.hpp>
+#include <VCLG/ExecutionContext.hpp>
 
 #include <vector>
+#include <atomic>
 
 
 namespace VCLG {
@@ -65,10 +67,12 @@ namespace VCLG {
         NodeHandle AddNode(std::unique_ptr<Node> node);
         bool AddConnection(Connection connection);
 
-        std::unique_ptr<VCL::ASTProgram> Compile();
+        bool Compile();
 
     private:
         bool GetNodesOrder(std::vector<uint32_t>& order);
+        std::unique_ptr<VCL::ASTFunctionDeclaration> CreateGraphEntrypoint(const std::vector<std::string>& nodesEntrypoint);
+        std::shared_ptr<ExecutionContext> CreateExecutionContext(std::unique_ptr<VCL::ASTProgram> program);
 
     private:
         std::shared_ptr<VCL::Logger> logger;
@@ -76,6 +80,11 @@ namespace VCLG {
         std::vector<uint32_t> inputNodes;
         std::vector<uint32_t> outputNodes;
         std::vector<Connection> connections;
+
+        std::shared_ptr<ExecutionContext> current;
+        std::shared_ptr<ExecutionContext> previous;
+
+        std::atomic<ExecutionContext*> currentHolder;
     };
 
 }

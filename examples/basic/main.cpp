@@ -35,8 +35,10 @@ int main() {
     auto oscSource = VCL::Source::LoadFromDisk(oscSourcePath);
     auto outputSource = VCL::Source::LoadFromDisk(outputSourcePath);
 
-    if (!gainSource.has_value() || !oscSource.has_value() || !outputSource.has_value())
+    if (!gainSource.has_value() || !oscSource.has_value() || !outputSource.has_value()) {
+        logger->Error("Missing nodes's source");
         return -1;
+    }
 
     VCLG::Graph graph{ logger };
     VCLG::Graph::NodeHandle gainHandle = graph.AddNode(std::make_unique<VCLG::Node>(*gainSource, logger));
@@ -46,29 +48,10 @@ int main() {
     oscHandle.GetOutput(0).Connect(gainHandle.GetInput(0));
     gainHandle.GetOutput(0).Connect(outputHandle.GetInput(0));
     outputHandle.SetAsGraphOutput();
-    std::unique_ptr<VCL::ASTProgram> program = graph.Compile();
-
-    if (!program)
+    
+    if (!graph.Compile()) {
+        logger->Error("Could not compile.");
         return -1;
-
-    VCL::PrettyPrinter prettyPrinter{};
-    program->Accept(&prettyPrinter);
-
-    std::cout << prettyPrinter.GetBuffer() << std::endl;
-
-    try {
-        std::unique_ptr<VCL::ExecutionSession> session = VCL::ExecutionSession::Create(logger);
-        session->SetDebugInformation(true);
-        std::unique_ptr<VCL::Module> module = session->CreateModule(std::move(program));
-        VCL::ModuleDebugInformationSettings diSettings{};
-        diSettings.generateDebugInformation = true;
-        module->Emit(diSettings);
-        module->Verify();
-        session->SubmitModule(std::move(module));
-    } catch (VCL::Exception& exception) {
-        logger->Error("{}: {}\n{}", exception.location.ToString(), exception.what(), exception.location.ToStringDetailed());
-    } catch (std::exception& exception) {
-        logger->Error("Unexpected: {}", exception.what());
     }
 
     return 0;

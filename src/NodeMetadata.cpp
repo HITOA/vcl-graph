@@ -6,6 +6,9 @@
 
 bool VCLG::NodeMetadata::Process(Node* node) {
     this->node = node;
+    node->inputs.clear();
+    node->outputs.clear();
+    node->entrypoint = nullptr;
     node->program->Accept(this);
     return true;
 }
@@ -24,7 +27,13 @@ void VCLG::NodeMetadata::VisitFunctionPrototype(VCL::ASTFunctionPrototype* node)
 }
 
 void VCLG::NodeMetadata::VisitFunctionDeclaration(VCL::ASTFunctionDeclaration* node) {
-
+    if (node->prototype->attributes.HasAttributeByName("NodeProcess")) {
+        if (!node->prototype->arguments.empty())
+            throw std::runtime_error{ "Node entry point cannot have parameter(s)." };
+        if (node->prototype->type->type != VCL::TypeInfo::TypeName::Void)
+            throw std::runtime_error{ "Node entry point's return type must be void." };
+        this->node->entrypoint = node;
+    }
 }
 
 void VCLG::NodeMetadata::VisitStructureDeclaration(VCL::ASTStructureDeclaration* node) {

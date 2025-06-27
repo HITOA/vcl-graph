@@ -80,12 +80,27 @@ bool VCLG::Graph::PortHandle::Connect(PortHandle handle) {
     return this->handle.GetGraph()->AddConnection(conn);
 }
 
-VCLG::Graph::Graph(std::shared_ptr<VCL::Logger> logger) : logger{ logger } {
+VCLG::Graph::Graph(std::shared_ptr<VCL::Logger> logger) : logger{ logger }, nodes{}, inputNodes{}, outputNodes{},
+    connections{}, current{ nullptr }, previous{ nullptr }, currentHolder{ nullptr } {
 
 }
 
 VCLG::Graph::~Graph() {
-
+    currentHolder.store(nullptr);
+    if (current) {
+        uint32_t oldUseCount = current->useCount.load();
+        while (oldUseCount != 0) {
+            current->useCount.wait(oldUseCount);
+            oldUseCount = current->useCount.load();
+        }
+    }
+    if (previous) {
+        uint32_t oldUseCount = previous->useCount.load();
+        while (oldUseCount != 0) {
+            previous->useCount.wait(oldUseCount);
+            oldUseCount = previous->useCount.load();
+        }
+    }
 }
 
 VCLG::Graph::NodeHandle VCLG::Graph::AddNode(std::unique_ptr<Node> node) {
@@ -114,11 +129,14 @@ bool VCLG::Graph::AddConnection(Connection connection) {
     return true;
 }
 
-std::unique_ptr<VCL::ASTProgram> VCLG::Graph::Compile() {
+bool VCLG::Graph::Compile() {
+    for (auto& node : nodes)
+        node->Reset();
+
     std::vector<uint32_t> nodesOrder{};
 
     if (!GetNodesOrder(nodesOrder))
-        return nullptr;
+        return false;
 
     std::unordered_map<std::string, std::string> inputsRemapping{};
     std::unordered_set<std::string> outputs{};
@@ -136,20 +154,41 @@ std::unique_ptr<VCL::ASTProgram> VCLG::Graph::Compile() {
 
     NodeProcessor processor{ inputsRemapping, outputs };
     std::vector<std::unique_ptr<VCL::ASTStatement>> statements{};
-
+    std::vector<std::string> nodesEntrypoint{};
+    
     for (uint32_t nodeIdx : nodesOrder) {
         processor.Process(nodes[nodeIdx].get(), nodeIdx);
-        std::unique_ptr<VCL::ASTProgram> nodeProgram = nodes[nodeIdx]->Reset();
+        nodesEntrypoint.push_back(nodes[nodeIdx]->GetEntrypoint()->prototype->name);
+        std::unique_ptr<VCL::ASTProgram> nodeProgram = nodes[nodeIdx]->MoveProgram();
         for (size_t i = 0; i < nodeProgram->statements.size(); ++i) {
             statements.push_back(std::move(nodeProgram->statements[i]));
         }
     }
 
+    statements.push_back(CreateGraphEntrypoint(nodesEntrypoint));
+
     std::shared_ptr<VCL::Source> graphSource = std::make_shared<VCL::Source>();
     graphSource->source = "";
     graphSource->path = "graph.vcl";
 
-    return std::make_unique<VCL::ASTProgram>(std::move(statements), graphSource);
+    std::unique_ptr<VCL::ASTProgram> program = std::make_unique<VCL::ASTProgram>(std::move(statements), graphSource);
+
+    std::shared_ptr<ExecutionContext> newContext = CreateExecutionContext(std::move(program));
+
+    currentHolder.store(newContext.get());
+
+    if (previous) {
+        uint32_t oldUseCount = previous->useCount.load();
+        while (oldUseCount != 0) {
+            previous->useCount.wait(oldUseCount);
+            oldUseCount = previous->useCount.load();
+        }
+    }
+
+    previous = current;
+    current = newContext;
+
+    return true;
 }
 
 bool VCLG::Graph::GetNodesOrder(std::vector<uint32_t>& order) {
@@ -190,4 +229,45 @@ bool VCLG::Graph::GetNodesOrder(std::vector<uint32_t>& order) {
     std::reverse(order.begin(), order.end());
 
     return true;
+}
+
+std::unique_ptr<VCL::ASTFunctionDeclaration> VCLG::Graph::CreateGraphEntrypoint(const std::vector<std::string>& nodesEntrypoint) {
+    std::shared_ptr<VCL::TypeInfo> returnTypeInfo = std::make_shared<VCL::TypeInfo>();
+    returnTypeInfo->type = VCL::TypeInfo::TypeName::Void;
+
+    std::string name = "Main";
+    std::vector<std::unique_ptr<VCL::ASTFunctionArgument>> arguments{};
+    VCL::AttributeSet attributes{};
+
+    std::unique_ptr<VCL::ASTFunctionPrototype> prototype = std::make_unique<VCL::ASTFunctionPrototype>(
+        returnTypeInfo,
+        name,
+        std::move(arguments),
+        std::move(attributes)
+    );
+
+    std::vector<std::unique_ptr<VCL::ASTStatement>> statements{};
+
+    for (size_t i = 0; i < nodesEntrypoint.size(); ++i) {
+        std::vector<std::unique_ptr<VCL::ASTExpression>> args{};
+        statements.push_back(std::make_unique<VCL::ASTFunctionCall>(nodesEntrypoint[i], std::move(args)));
+    }
+
+    return std::make_unique<VCL::ASTFunctionDeclaration>(std::move(prototype), std::make_unique<VCL::ASTCompoundStatement>(std::move(statements)));
+}
+
+std::shared_ptr<VCLG::ExecutionContext> VCLG::Graph::CreateExecutionContext(std::unique_ptr<VCL::ASTProgram> program) {
+    std::shared_ptr<ExecutionContext> newContext = std::make_shared<ExecutionContext>();
+
+    newContext->useCount.store(0);
+    newContext->session = VCL::ExecutionSession::Create();
+
+    std::unique_ptr<VCL::Module> module = newContext->session->CreateModule(std::move(program));
+    module->Emit();
+    module->Verify();
+    module->Optimize();
+
+    newContext->session->SubmitModule(std::move(module));
+
+    return newContext;
 }

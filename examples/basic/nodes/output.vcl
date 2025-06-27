@@ -4,7 +4,6 @@
 
 in vfloat input;
 
-[DoNotMangle]
 out vfloat output;
 
 [NodeProcess]
