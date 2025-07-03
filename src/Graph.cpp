@@ -1,5 +1,7 @@
 #include <VCLG/Graph.hpp>
 
+#include <VCL/PrettyPrinter.hpp>
+
 #include "NodeProcessor.hpp"
 
 #include <queue>
@@ -80,6 +82,20 @@ bool VCLG::Graph::PortHandle::Connect(PortHandle handle) {
     return this->handle.GetGraph()->AddConnection(conn);
 }
 
+VCLG::Graph::ExecutionContextHandle::ExecutionContextHandle(ExecutionContextHolder* holder) : holder{ holder } {
+    if (holder)
+        holder->counter.fetch_add(1);
+}
+
+VCLG::Graph::ExecutionContextHandle::~ExecutionContextHandle() {
+    if (holder)
+        holder->counter.fetch_sub(1);
+}
+
+VCLG::ExecutionContext* VCLG::Graph::ExecutionContextHandle::operator->() {
+    return holder->context.get();
+}
+
 VCLG::Graph::Graph(std::shared_ptr<VCL::Logger> logger) : logger{ logger }, nodes{}, inputNodes{}, outputNodes{},
     connections{}, current{ nullptr }, previous{ nullptr }, currentHolder{ nullptr } {
 
@@ -88,17 +104,17 @@ VCLG::Graph::Graph(std::shared_ptr<VCL::Logger> logger) : logger{ logger }, node
 VCLG::Graph::~Graph() {
     currentHolder.store(nullptr);
     if (current) {
-        uint32_t oldUseCount = current->useCount.load();
+        uint32_t oldUseCount = current->counter.load();
         while (oldUseCount != 0) {
-            current->useCount.wait(oldUseCount);
-            oldUseCount = current->useCount.load();
+            current->counter.wait(oldUseCount);
+            oldUseCount = current->counter.load();
         }
     }
     if (previous) {
-        uint32_t oldUseCount = previous->useCount.load();
+        uint32_t oldUseCount = previous->counter.load();
         while (oldUseCount != 0) {
-            previous->useCount.wait(oldUseCount);
-            oldUseCount = previous->useCount.load();
+            previous->counter.wait(oldUseCount);
+            oldUseCount = previous->counter.load();
         }
     }
 }
@@ -129,7 +145,7 @@ bool VCLG::Graph::AddConnection(Connection connection) {
     return true;
 }
 
-bool VCLG::Graph::Compile() {
+bool VCLG::Graph::Compile(std::function<void*(ExecutionContext*)> userDataConstructor, std::function<void(void*)> userDataDestroyer) {
     for (auto& node : nodes)
         node->Reset();
 
@@ -173,22 +189,31 @@ bool VCLG::Graph::Compile() {
 
     std::unique_ptr<VCL::ASTProgram> program = std::make_unique<VCL::ASTProgram>(std::move(statements), graphSource);
 
-    std::shared_ptr<ExecutionContext> newContext = CreateExecutionContext(std::move(program));
+    //VCL::PrettyPrinter pp{};
+    //program->Accept(&pp);
 
-    currentHolder.store(newContext.get());
-
-    if (previous) {
-        uint32_t oldUseCount = previous->useCount.load();
-        while (oldUseCount != 0) {
-            previous->useCount.wait(oldUseCount);
-            oldUseCount = previous->useCount.load();
-        }
+    std::shared_ptr<ExecutionContextHolder> newHolder = CreateExecutionContext(std::move(program));
+    if (userDataConstructor && userDataDestroyer) {
+        newHolder->context->SetUserData(userDataConstructor, userDataDestroyer);
     }
 
+    currentHolder.store(newHolder.get());
+
+    if (previous) {
+        uint32_t oldUseCount = previous->counter.load();
+        while (oldUseCount != 0) {
+            previous->counter.wait(oldUseCount);
+            oldUseCount = previous->counter.load();
+        }
+    }
     previous = current;
-    current = newContext;
+    current = newHolder;
 
     return true;
+}
+
+VCLG::Graph::ExecutionContextHandle VCLG::Graph::GetExecutionContext() {
+    return ExecutionContextHandle{ currentHolder.load() };
 }
 
 bool VCLG::Graph::GetNodesOrder(std::vector<uint32_t>& order) {
@@ -256,18 +281,10 @@ std::unique_ptr<VCL::ASTFunctionDeclaration> VCLG::Graph::CreateGraphEntrypoint(
     return std::make_unique<VCL::ASTFunctionDeclaration>(std::move(prototype), std::make_unique<VCL::ASTCompoundStatement>(std::move(statements)));
 }
 
-std::shared_ptr<VCLG::ExecutionContext> VCLG::Graph::CreateExecutionContext(std::unique_ptr<VCL::ASTProgram> program) {
-    std::shared_ptr<ExecutionContext> newContext = std::make_shared<ExecutionContext>();
-
-    newContext->useCount.store(0);
-    newContext->session = VCL::ExecutionSession::Create();
-
-    std::unique_ptr<VCL::Module> module = newContext->session->CreateModule(std::move(program));
-    module->Emit();
-    module->Verify();
-    module->Optimize();
-
-    newContext->session->SubmitModule(std::move(module));
-
-    return newContext;
+std::shared_ptr<VCLG::Graph::ExecutionContextHolder> VCLG::Graph::CreateExecutionContext(std::unique_ptr<VCL::ASTProgram> program) {
+    std::shared_ptr<ExecutionContext> context = std::make_shared<ExecutionContext>(std::move(program));
+    std::shared_ptr<ExecutionContextHolder> holder = std::make_shared<ExecutionContextHolder>();
+    holder->context = context;
+    holder->counter.store(0);
+    return holder;
 }

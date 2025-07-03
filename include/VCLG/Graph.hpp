@@ -5,6 +5,7 @@
 
 #include <vector>
 #include <atomic>
+#include <functional>
 
 
 namespace VCLG {
@@ -60,19 +61,38 @@ namespace VCLG {
             bool input;
         };
 
+        struct ExecutionContextHolder {
+            std::shared_ptr<ExecutionContext> context;
+            std::atomic_uint32_t counter;
+        };
+
+        class ExecutionContextHandle {
+        public:
+            ExecutionContextHandle() = delete;
+            ExecutionContextHandle(ExecutionContextHolder* holder);
+            ~ExecutionContextHandle();
+
+            ExecutionContext* operator->();
+        private:
+            ExecutionContextHolder* holder;
+        };
+
+    public:
         Graph() = delete;
         Graph(std::shared_ptr<VCL::Logger> logger = nullptr);
         ~Graph();
 
         NodeHandle AddNode(std::unique_ptr<Node> node);
         bool AddConnection(Connection connection);
+        
+        bool Compile(std::function<void*(ExecutionContext*)> userDataConstructor = nullptr, std::function<void(void*)> userDataDestroyer = nullptr);
 
-        bool Compile();
+        ExecutionContextHandle GetExecutionContext();
 
     private:
         bool GetNodesOrder(std::vector<uint32_t>& order);
         std::unique_ptr<VCL::ASTFunctionDeclaration> CreateGraphEntrypoint(const std::vector<std::string>& nodesEntrypoint);
-        std::shared_ptr<ExecutionContext> CreateExecutionContext(std::unique_ptr<VCL::ASTProgram> program);
+        std::shared_ptr<ExecutionContextHolder> CreateExecutionContext(std::unique_ptr<VCL::ASTProgram> program);
 
     private:
         std::shared_ptr<VCL::Logger> logger;
@@ -81,10 +101,10 @@ namespace VCLG {
         std::vector<uint32_t> outputNodes;
         std::vector<Connection> connections;
 
-        std::shared_ptr<ExecutionContext> current;
-        std::shared_ptr<ExecutionContext> previous;
+        std::shared_ptr<ExecutionContextHolder> current;
+        std::shared_ptr<ExecutionContextHolder> previous;
 
-        std::atomic<ExecutionContext*> currentHolder;
+        std::atomic<ExecutionContextHolder*> currentHolder;
     };
 
 }

@@ -17,6 +17,7 @@ add_library(vclg
         ${CMAKE_CURRENT_SOURCE_DIR}/src/NodeProcessor.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/RenamingScope.hpp
 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ExecutionContext.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Graph.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Node.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/NodeMetadata.cpp
