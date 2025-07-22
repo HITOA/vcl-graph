@@ -11,10 +11,6 @@
 
 VCLG::Graph::NodeHandle::NodeHandle(Graph* graph, uint32_t nodeIdx) : graph{ graph }, nodeIdx{ nodeIdx } {}
 
-VCLG::Node* VCLG::Graph::NodeHandle::operator->() {
-    return graph->nodes[nodeIdx].get();
-}
-
 VCLG::Node* VCLG::Graph::NodeHandle::Get() {
     return graph->nodes[nodeIdx].get();
 }
@@ -143,6 +139,14 @@ bool VCLG::Graph::AddConnection(Connection connection) {
 
     connections.push_back(connection);
     return true;
+}
+
+VCLG::Graph::NodeHandle VCLG::Graph::begin() {
+    return NodeHandle{ this, 0 };
+}
+
+VCLG::Graph::NodeHandle VCLG::Graph::end() {
+    return NodeHandle{ this, (uint32_t)nodes.size() };
 }
 
 bool VCLG::Graph::Compile(std::function<void*(ExecutionContext*)> userDataConstructor, std::function<void(void*)> userDataDestroyer) {

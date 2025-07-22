@@ -27,7 +27,6 @@ namespace VCLG {
             NodeHandle(Graph* graph, uint32_t nodeIdx);
             ~NodeHandle() = default;
 
-            Node* operator->();
             Node* Get();
 
             PortHandle GetInput(uint32_t idx);
@@ -38,6 +37,13 @@ namespace VCLG {
 
             bool SetAsGraphInput(); // This node will be treated as a graph input
             bool SetAsGraphOutput(); // This node will be treated as a graph output
+
+            inline Node* operator->() { return graph->nodes[nodeIdx].get(); }
+            inline NodeHandle& operator*() { return *this; }
+            inline bool operator==(const NodeHandle& rhs) { return nodeIdx == rhs.nodeIdx && graph == rhs.graph; }
+            inline bool operator!=(const NodeHandle& rhs) { return !(*this == rhs); }
+            inline NodeHandle operator++() { return NodeHandle{ graph, ++nodeIdx }; }
+            inline NodeHandle operator++(int) { return NodeHandle{ graph, nodeIdx++ }; }
 
         private:
             Graph* graph;
@@ -73,6 +79,9 @@ namespace VCLG {
             ~ExecutionContextHandle();
 
             ExecutionContext* operator->();
+
+            operator bool() const { return holder->context != nullptr; }
+
         private:
             ExecutionContextHolder* holder;
         };
@@ -84,6 +93,9 @@ namespace VCLG {
 
         NodeHandle AddNode(std::unique_ptr<Node> node);
         bool AddConnection(Connection connection);
+
+        NodeHandle begin();
+        NodeHandle end();
         
         bool Compile(std::function<void*(ExecutionContext*)> userDataConstructor = nullptr, std::function<void(void*)> userDataDestroyer = nullptr);
 
