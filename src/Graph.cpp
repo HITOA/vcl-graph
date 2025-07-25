@@ -78,6 +78,22 @@ bool VCLG::Graph::PortHandle::Connect(PortHandle handle) {
     return this->handle.GetGraph()->AddConnection(conn);
 }
 
+VCLG::Graph* VCLG::Graph::PortHandle::GetGraph() {
+    return handle.GetGraph();
+}
+
+VCLG::Graph::NodeHandle VCLG::Graph::PortHandle::GetNodeHandle() {
+    return handle;
+}
+
+uint32_t VCLG::Graph::PortHandle::GetPortIdx() {
+    return portIdx;
+}
+
+bool VCLG::Graph::PortHandle::IsPortInput() {
+    return input;
+}
+
 VCLG::Graph::ExecutionContextHandle::ExecutionContextHandle(ExecutionContextHolder* holder) : holder{ holder } {
     if (holder)
         holder->counter.fetch_add(1);

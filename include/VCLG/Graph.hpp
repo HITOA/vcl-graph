@@ -61,6 +61,11 @@ namespace VCLG {
 
             bool Connect(PortHandle handle);
 
+            Graph* GetGraph();
+            NodeHandle GetNodeHandle();
+            uint32_t GetPortIdx();
+            bool IsPortInput();
+
         private:
             NodeHandle handle;
             uint32_t portIdx;
