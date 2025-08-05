@@ -41,7 +41,7 @@ namespace VCLG {
         void VisitFieldAccessExpression(VCL::ASTFieldAccessExpression* node) override;
         void VisitSubscriptExpression(VCL::ASTSubscriptExpression* node) override;
         void VisitLiteralExpression(VCL::ASTLiteralExpression* node) override;
-        void VisitVariableExpression(VCL::ASTVariableExpression* node) override;
+        void VisitIdentifierExpression(VCL::ASTIdentifierExpression* node) override;
         void VisitVariableDeclaration(VCL::ASTVariableDeclaration* node) override;
         void VisitFunctionCall(VCL::ASTFunctionCall* node) override;
         void VisitAggregateExpression(VCL::ASTAggregateExpression* node) override;

@@ -59,7 +59,8 @@ VCLG::Port* VCLG::Graph::PortHandle::Get() {
 
 bool VCLG::Graph::PortHandle::Connect(PortHandle handle) {
     if (handle.input == input) {
-        this->handle.GetGraph()->logger->Error("Cannot connect two input or output port together.");
+        if (this->handle.GetGraph()->logger)
+            this->handle.GetGraph()->logger->Error("Cannot connect two input or output port together.");
         return false;
     }
 
@@ -110,7 +111,7 @@ VCLG::ExecutionContext* VCLG::Graph::ExecutionContextHandle::operator->() {
 
 VCLG::Graph::Graph(std::shared_ptr<VCL::Logger> logger) : logger{ logger }, nodes{}, inputNodes{}, outputNodes{},
     connections{}, current{ nullptr }, previous{ nullptr }, currentHolder{ nullptr } {
-
+    registry = VCL::DirectiveRegistry::Create();
 }
 
 VCLG::Graph::~Graph() {
@@ -133,7 +134,7 @@ VCLG::Graph::~Graph() {
 
 VCLG::Graph::NodeHandle VCLG::Graph::AddNode(std::unique_ptr<Node> node) {
     uint32_t newNodeIdx = (uint32_t)nodes.size();
-    node->Reset();
+    node->Reset(registry);
     if (node->GetInputs().size() == 0 && node->GetOutputs().size() == 0 && logger)
         logger->Warning("Node {} doesn't have any inputs & outputs and cannot be connected to other nodes in the graph.", newNodeIdx);
     nodes.push_back(std::move(node));
@@ -153,7 +154,10 @@ bool VCLG::Graph::AddConnection(Connection connection) {
         return false;
     }
 
-    connections.push_back(connection);
+    if (connections.count(connection))
+        return true;
+
+    connections.insert(connection);
     return true;
 }
 
@@ -165,14 +169,25 @@ VCLG::Graph::NodeHandle VCLG::Graph::end() {
     return NodeHandle{ this, (uint32_t)nodes.size() };
 }
 
-bool VCLG::Graph::Compile(std::function<void*(ExecutionContext*)> userDataConstructor, std::function<void(void*)> userDataDestroyer) {
+VCLG::Graph::NodeHandle VCLG::Graph::GetNodeByIdx(uint32_t idx) {
+    return NodeHandle{ this, idx };
+}
+
+const std::unordered_set<VCLG::Graph::Connection, VCLG::Graph::Connection::Hash>& VCLG::Graph::Connections() const {
+    return connections;
+}
+
+bool VCLG::Graph::Compile(std::shared_ptr<VCL::MetaState> state) {
     for (auto& node : nodes)
-        node->Reset();
+        node->Reset(registry);
 
     std::vector<uint32_t> nodesOrder{};
 
     if (!GetNodesOrder(nodesOrder))
         return false;
+
+    if (state == nullptr)
+        state = VCL::MetaState::Create();
 
     std::unordered_map<std::string, std::string> inputsRemapping{};
     std::unordered_set<std::string> outputs{};
@@ -212,7 +227,7 @@ bool VCLG::Graph::Compile(std::function<void*(ExecutionContext*)> userDataConstr
     //VCL::PrettyPrinter pp{};
     //program->Accept(&pp);
 
-    std::shared_ptr<ExecutionContextHolder> newHolder = CreateExecutionContext(std::move(program));
+    std::shared_ptr<ExecutionContextHolder> newHolder = CreateExecutionContext(std::move(program), state);
     if (userDataConstructor && userDataDestroyer) {
         newHolder->context->SetUserData(userDataConstructor, userDataDestroyer);
     }
@@ -230,6 +245,15 @@ bool VCLG::Graph::Compile(std::function<void*(ExecutionContext*)> userDataConstr
     current = newHolder;
 
     return true;
+}
+
+void VCLG::Graph::SetUserDataCallback(std::function<void*(ExecutionContext*)> userDataConstructor, std::function<void(void*)> userDataDestroyer) {
+    this->userDataConstructor = userDataConstructor;
+    this->userDataDestroyer = userDataDestroyer;
+}
+
+std::shared_ptr<VCL::DirectiveRegistry> VCLG::Graph::GetDirectiveRegistry() {
+    return registry;
 }
 
 VCLG::Graph::ExecutionContextHandle VCLG::Graph::GetExecutionContext() {
@@ -301,8 +325,9 @@ std::unique_ptr<VCL::ASTFunctionDeclaration> VCLG::Graph::CreateGraphEntrypoint(
     return std::make_unique<VCL::ASTFunctionDeclaration>(std::move(prototype), std::make_unique<VCL::ASTCompoundStatement>(std::move(statements)));
 }
 
-std::shared_ptr<VCLG::Graph::ExecutionContextHolder> VCLG::Graph::CreateExecutionContext(std::unique_ptr<VCL::ASTProgram> program) {
-    std::shared_ptr<ExecutionContext> context = std::make_shared<ExecutionContext>(std::move(program));
+std::shared_ptr<VCLG::Graph::ExecutionContextHolder> VCLG::Graph::CreateExecutionContext(
+    std::unique_ptr<VCL::ASTProgram> program, std::shared_ptr<VCL::MetaState> state) {
+    std::shared_ptr<ExecutionContext> context = std::make_shared<ExecutionContext>(std::move(program), registry, state);
     std::shared_ptr<ExecutionContextHolder> holder = std::make_shared<ExecutionContextHolder>();
     holder->context = context;
     holder->counter.store(0);

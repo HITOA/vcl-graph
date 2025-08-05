@@ -187,7 +187,7 @@ void VCLG::NodeProcessor::VisitLiteralExpression(VCL::ASTLiteralExpression* node
 
 }
 
-void VCLG::NodeProcessor::VisitVariableExpression(VCL::ASTVariableExpression* node) {
+void VCLG::NodeProcessor::VisitIdentifierExpression(VCL::ASTIdentifierExpression* node) {
     std::string newName = scope->GetNewName(node->name);
     if (!newName.empty())
         node->name = newName;

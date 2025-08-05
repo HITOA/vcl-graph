@@ -1,6 +1,7 @@
 #pragma once
 
 #include <VCL/ExecutionSession.hpp>
+#include <VCL/Meta.hpp>
 
 #include <atomic>
 #include <functional>
@@ -12,7 +13,7 @@ namespace VCLG {
     class ExecutionContext {
     public:
         ExecutionContext() = delete;
-        ExecutionContext(std::unique_ptr<VCL::ASTProgram> program);
+        ExecutionContext(std::unique_ptr<VCL::ASTProgram> program, std::shared_ptr<VCL::DirectiveRegistry> registry, std::shared_ptr<VCL::MetaState> state);
         ~ExecutionContext();
 
         void SetUserData(std::function<void*(ExecutionContext*)> userDataConstructor, std::function<void(void*)> userDataDestroyer);

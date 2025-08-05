@@ -2,10 +2,13 @@
 
 
 
-VCLG::ExecutionContext::ExecutionContext(std::unique_ptr<VCL::ASTProgram> program) {
+VCLG::ExecutionContext::ExecutionContext(std::unique_ptr<VCL::ASTProgram> program, 
+    std::shared_ptr<VCL::DirectiveRegistry> registry, std::shared_ptr<VCL::MetaState> state) {
     session = VCL::ExecutionSession::Create();
 
     std::unique_ptr<VCL::Module> module = session->CreateModule(std::move(program));
+    module->SetDirectiveRegistry(registry);
+    module->SetMetaState(state);
     module->Emit();
     module->Verify();
     module->Optimize();

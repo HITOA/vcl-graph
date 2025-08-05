@@ -5,6 +5,7 @@
 #include <VCL/Source.hpp>
 #include <VCL/AST.hpp>
 #include <VCL/Logger.hpp>
+#include <VCL/Meta.hpp>
 
 
 namespace VCLG {
@@ -14,7 +15,7 @@ namespace VCLG {
         Node(std::shared_ptr<VCL::Source> source, std::shared_ptr<VCL::Logger> logger = nullptr);
 
         void UpdateSource(std::shared_ptr<VCL::Source> source);
-        void Reset();
+        void Reset(std::shared_ptr<VCL::DirectiveRegistry> registry = nullptr);
         std::unique_ptr<VCL::ASTProgram> MoveProgram();
 
         const std::vector<std::shared_ptr<Port>>& GetInputs();

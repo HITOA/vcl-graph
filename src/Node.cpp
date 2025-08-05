@@ -13,8 +13,9 @@ void VCLG::Node::UpdateSource(std::shared_ptr<VCL::Source> source) {
     this->source = source;
 }
 
-void VCLG::Node::Reset() {
+void VCLG::Node::Reset(std::shared_ptr<VCL::DirectiveRegistry> registry) {
     std::unique_ptr<VCL::Parser> parser = VCL::Parser::Create(logger);
+    parser->SetDirectiveRegistry(registry);
     program = parser->Parse(source);
 
     NodeMetadata visitor{};

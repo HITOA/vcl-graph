@@ -3,9 +3,12 @@
 #include <VCLG/Node.hpp>
 #include <VCLG/ExecutionContext.hpp>
 
+#include <VCL/Meta.hpp>
+
 #include <vector>
 #include <atomic>
 #include <functional>
+#include <unordered_set>
 
 
 namespace VCLG {
@@ -17,6 +20,19 @@ namespace VCLG {
             uint32_t outputNodePortIdx;
             uint32_t inputNodeIdx;
             uint32_t inputNodePortIdx;
+
+            inline bool operator==(const Connection& rhs) const { 
+                return outputNodeIdx == rhs.outputNodeIdx && inputNodeIdx == rhs.inputNodeIdx &&
+                    outputNodePortIdx == rhs.outputNodePortIdx && inputNodePortIdx == rhs.inputNodePortIdx;
+            }
+
+            struct Hash {
+                size_t operator()(const Connection& connection) const {
+                    std::hash<uint32_t> hasher{};
+                    return hasher(connection.outputNodeIdx) ^ hasher(connection.outputNodePortIdx) << 1 ^
+                        hasher(connection.inputNodeIdx) << 2 ^ hasher(connection.inputNodePortIdx) << 3;
+                }
+            };
         };
 
         class PortHandle;
@@ -40,8 +56,8 @@ namespace VCLG {
 
             inline Node* operator->() { return graph->nodes[nodeIdx].get(); }
             inline NodeHandle& operator*() { return *this; }
-            inline bool operator==(const NodeHandle& rhs) { return nodeIdx == rhs.nodeIdx && graph == rhs.graph; }
-            inline bool operator!=(const NodeHandle& rhs) { return !(*this == rhs); }
+            inline bool operator==(const NodeHandle& rhs) const { return nodeIdx == rhs.nodeIdx && graph == rhs.graph; }
+            inline bool operator!=(const NodeHandle& rhs) const { return !(*this == rhs); }
             inline NodeHandle operator++() { return NodeHandle{ graph, ++nodeIdx }; }
             inline NodeHandle operator++(int) { return NodeHandle{ graph, nodeIdx++ }; }
 
@@ -101,27 +117,40 @@ namespace VCLG {
 
         NodeHandle begin();
         NodeHandle end();
+
+        NodeHandle GetNodeByIdx(uint32_t idx);
+
+        const std::unordered_set<Connection, Connection::Hash>& Connections() const;
         
-        bool Compile(std::function<void*(ExecutionContext*)> userDataConstructor = nullptr, std::function<void(void*)> userDataDestroyer = nullptr);
+        bool Compile(std::shared_ptr<VCL::MetaState> state = nullptr);
+
+        void SetUserDataCallback(std::function<void*(ExecutionContext*)> userDataConstructor, std::function<void(void*)> userDataDestroyer);
+        std::shared_ptr<VCL::DirectiveRegistry> GetDirectiveRegistry();
 
         ExecutionContextHandle GetExecutionContext();
 
     private:
         bool GetNodesOrder(std::vector<uint32_t>& order);
         std::unique_ptr<VCL::ASTFunctionDeclaration> CreateGraphEntrypoint(const std::vector<std::string>& nodesEntrypoint);
-        std::shared_ptr<ExecutionContextHolder> CreateExecutionContext(std::unique_ptr<VCL::ASTProgram> program);
+        std::shared_ptr<ExecutionContextHolder> CreateExecutionContext(std::unique_ptr<VCL::ASTProgram> program, std::shared_ptr<VCL::MetaState> state);
 
     private:
         std::shared_ptr<VCL::Logger> logger;
         std::vector<std::unique_ptr<Node>> nodes;
         std::vector<uint32_t> inputNodes;
         std::vector<uint32_t> outputNodes;
-        std::vector<Connection> connections;
+
+        std::unordered_set<Connection, Connection::Hash> connections;
 
         std::shared_ptr<ExecutionContextHolder> current;
         std::shared_ptr<ExecutionContextHolder> previous;
 
         std::atomic<ExecutionContextHolder*> currentHolder;
+
+        std::function<void*(ExecutionContext*)> userDataConstructor;
+        std::function<void(void*)> userDataDestroyer;
+
+        std::shared_ptr<VCL::DirectiveRegistry> registry;
     };
 
 }

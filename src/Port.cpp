@@ -16,8 +16,5 @@ std::shared_ptr<VCL::TypeInfo> VCLG::Port::GetTypeInfo() {
 }
 
 bool VCLG::Port::CanConnect(Port* port) {
-    if (port->typeInfo->type != VCL::TypeInfo::TypeName::Custom && port->typeInfo->type == typeInfo->type)
-        return true;
-    // TODO: Rule for custom type
-    return false;
+    return *(port->typeInfo) == *typeInfo;
 }
