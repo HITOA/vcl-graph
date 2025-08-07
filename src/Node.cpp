@@ -1,6 +1,7 @@
 #include <VCLG/Node.hpp>
 
 #include <VCL/Parser.hpp>
+#include <VCL/ExecutionSession.hpp>
 
 #include "NodeMetadata.hpp"
 
@@ -13,7 +14,7 @@ void VCLG::Node::UpdateSource(std::shared_ptr<VCL::Source> source) {
     this->source = source;
 }
 
-void VCLG::Node::Reset(std::shared_ptr<VCL::DirectiveRegistry> registry) {
+void VCLG::Node::Reset(std::shared_ptr<VCL::DirectiveRegistry> registry, bool compile) {
     std::unique_ptr<VCL::Parser> parser = VCL::Parser::Create(logger);
     parser->SetDirectiveRegistry(registry);
     program = parser->Parse(source);
@@ -26,6 +27,21 @@ void VCLG::Node::Reset(std::shared_ptr<VCL::DirectiveRegistry> registry) {
 
     if (entrypoint == nullptr)
         throw std::runtime_error{ "Node doesn't have any entry point." };
+    
+    // Compiling node with temporary program to verify and get metadata
+    if (compile) {
+        std::unique_ptr<VCL::ExecutionSession> session = VCL::ExecutionSession::Create(logger);
+        std::unique_ptr<VCL::Module> module = session->CreateModule(parser->Parse(source));
+
+        std::shared_ptr<VCL::MetaState> state = VCL::MetaState::Create();
+
+        module->SetDirectiveRegistry(registry);
+        module->SetMetaState(state);
+        module->Emit();
+        module->Verify();
+
+        OnMetaState(state);
+    }
 }
 
 std::unique_ptr<VCL::ASTProgram> VCLG::Node::MoveProgram() {

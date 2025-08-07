@@ -115,6 +115,11 @@ namespace VCLG {
         NodeHandle AddNode(std::unique_ptr<Node> node);
         bool AddConnection(Connection connection);
 
+        template<typename T, typename... Args>
+        NodeHandle CreateNode(Args&&... args) {
+            return AddNode(std::make_unique<T>(std::forward<Args>(args)..., logger));
+        }
+
         NodeHandle begin();
         NodeHandle end();
 
@@ -128,6 +133,8 @@ namespace VCLG {
         std::shared_ptr<VCL::DirectiveRegistry> GetDirectiveRegistry();
 
         ExecutionContextHandle GetExecutionContext();
+
+        void SetLogger(std::shared_ptr<VCL::Logger> logger);
 
     private:
         bool GetNodesOrder(std::vector<uint32_t>& order);

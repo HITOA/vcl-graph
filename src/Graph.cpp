@@ -134,7 +134,7 @@ VCLG::Graph::~Graph() {
 
 VCLG::Graph::NodeHandle VCLG::Graph::AddNode(std::unique_ptr<Node> node) {
     uint32_t newNodeIdx = (uint32_t)nodes.size();
-    node->Reset(registry);
+    node->Reset(registry, true);
     if (node->GetInputs().size() == 0 && node->GetOutputs().size() == 0 && logger)
         logger->Warning("Node {} doesn't have any inputs & outputs and cannot be connected to other nodes in the graph.", newNodeIdx);
     nodes.push_back(std::move(node));
@@ -224,8 +224,10 @@ bool VCLG::Graph::Compile(std::shared_ptr<VCL::MetaState> state) {
 
     std::unique_ptr<VCL::ASTProgram> program = std::make_unique<VCL::ASTProgram>(std::move(statements), graphSource);
 
-    //VCL::PrettyPrinter pp{};
-    //program->Accept(&pp);
+    VCL::PrettyPrinter pp{};
+    program->Accept(&pp);
+
+    logger->Debug("{}", pp.GetBuffer());
 
     std::shared_ptr<ExecutionContextHolder> newHolder = CreateExecutionContext(std::move(program), state);
     if (userDataConstructor && userDataDestroyer) {
@@ -258,6 +260,10 @@ std::shared_ptr<VCL::DirectiveRegistry> VCLG::Graph::GetDirectiveRegistry() {
 
 VCLG::Graph::ExecutionContextHandle VCLG::Graph::GetExecutionContext() {
     return ExecutionContextHandle{ currentHolder.load() };
+}
+
+void VCLG::Graph::SetLogger(std::shared_ptr<VCL::Logger> logger) {
+    this->logger = logger;
 }
 
 bool VCLG::Graph::GetNodesOrder(std::vector<uint32_t>& order) {
