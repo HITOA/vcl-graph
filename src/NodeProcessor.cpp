@@ -2,13 +2,17 @@
 
 #define KEEP_NAME_ATTRIBUTE "DoNotMangle"
 
+#include <iostream>
 
 
-VCLG::NodeProcessor::NodeProcessor(const std::unordered_map<std::string, std::string>& inputsRemapping, const std::unordered_set<std::string>& outputs) :
-    inputsRemapping{ inputsRemapping }, outputs{ outputs } {};
+
+VCLG::NodeProcessor::NodeProcessor(const std::unordered_map<std::string, std::string>& inputsRemapping, const std::unordered_set<std::string>& outputs, 
+    std::unordered_map<std::string, Port*>& inputToPort, std::vector<std::string>& nodesEntrypoint) :
+    inputsRemapping{ inputsRemapping }, outputs{ outputs }, inputToPort{ inputToPort }, nodesEntrypoint{ nodesEntrypoint } {};
 
 bool VCLG::NodeProcessor::Process(Node* node, uint32_t nodeIdx) {
     this->node = node;
+    this->inputIdx = 0;
     this->symbolPrefix = std::string{ "Node" } + std::to_string(nodeIdx) + "_";
     this->scope = std::make_unique<RenamingScopeManager>();
     node->program->Accept(this);
@@ -49,6 +53,14 @@ void VCLG::NodeProcessor::VisitFunctionPrototype(VCL::ASTFunctionPrototype* node
 
 void VCLG::NodeProcessor::VisitFunctionDeclaration(VCL::ASTFunctionDeclaration* node) {
     node->prototype->Accept(this);
+
+    if (node->prototype->attributes.HasAttributeByName("NodeProcess")) {
+        if (!node->prototype->arguments.empty())
+            throw std::runtime_error{ "Node entry point cannot have parameter(s)." };
+        if (node->prototype->type->type != VCL::TypeInfo::TypeName::Void)
+            throw std::runtime_error{ "Node entry point's return type must be void." };
+        nodesEntrypoint.push_back(node->prototype->name);
+    }
 
     scope->PushScope();
 
@@ -207,10 +219,15 @@ void VCLG::NodeProcessor::VisitVariableDeclaration(VCL::ASTVariableDeclaration* 
                 scope->PushNewName(node->name, newName);
                 node->name = newName;
             } else {
+                if (node->type->IsInput())
+                    inputToPort[newName] = this->node->GetInputs()[inputIdx].get();
                 scope->PushNewName(node->name, newName);
                 node->name = newName;
             }
         }
+
+        if (node->type->IsInput())
+            ++inputIdx;
     }
 
     RenameTypeInfo(node->type);

@@ -5,6 +5,7 @@
 #include "NodeProcessor.hpp"
 
 #include <queue>
+#include <iostream>
 
 #define IT_MAX 100000
 
@@ -190,6 +191,7 @@ bool VCLG::Graph::Compile(std::shared_ptr<VCL::MetaState> state) {
         state = VCL::MetaState::Create();
 
     std::unordered_map<std::string, std::string> inputsRemapping{};
+    std::unordered_map<std::string, Port*> inputToPort{};
     std::unordered_set<std::string> outputs{};
 
     for (auto& connection : connections) {
@@ -203,13 +205,12 @@ bool VCLG::Graph::Compile(std::shared_ptr<VCL::MetaState> state) {
         outputs.insert(prefixedOutputPortName);
     }
 
-    NodeProcessor processor{ inputsRemapping, outputs };
-    std::vector<std::unique_ptr<VCL::ASTStatement>> statements{};
     std::vector<std::string> nodesEntrypoint{};
+    std::vector<std::unique_ptr<VCL::ASTStatement>> statements{};
+    NodeProcessor processor{ inputsRemapping, outputs, inputToPort, nodesEntrypoint };
     
     for (uint32_t nodeIdx : nodesOrder) {
         processor.Process(nodes[nodeIdx].get(), nodeIdx);
-        nodesEntrypoint.push_back(nodes[nodeIdx]->GetEntrypoint()->prototype->name);
         std::unique_ptr<VCL::ASTProgram> nodeProgram = nodes[nodeIdx]->MoveProgram();
         for (size_t i = 0; i < nodeProgram->statements.size(); ++i) {
             statements.push_back(std::move(nodeProgram->statements[i]));
@@ -224,12 +225,28 @@ bool VCLG::Graph::Compile(std::shared_ptr<VCL::MetaState> state) {
 
     std::unique_ptr<VCL::ASTProgram> program = std::make_unique<VCL::ASTProgram>(std::move(statements), graphSource);
 
-    VCL::PrettyPrinter pp{};
-    program->Accept(&pp);
-
-    logger->Debug("{}", pp.GetBuffer());
+    if (logger) {
+        VCL::PrettyPrinter pp{};
+        program->Accept(&pp);
+        
+        logger->Debug("{}", pp.GetBuffer());
+    }
 
     std::shared_ptr<ExecutionContextHolder> newHolder = CreateExecutionContext(std::move(program), state);
+
+    uint32_t i = 0;
+    for (auto& varInfo : newHolder->context->GetModuleInfo()->GetVariables()) {
+        if (!inputToPort.count(varInfo->name)) {
+            ++i;
+            continue;
+        }
+        Port* port = inputToPort[varInfo->name];
+        Port::Storage storage = port->GetStorage();
+        if (storage.ptr)
+            storage.copyTo(&storage, newHolder->context->GetPortsAddresses()[i], varInfo->typeinfo->rtInfo.sizeInBytes);
+        ++i;
+    }
+
     if (userDataConstructor && userDataDestroyer) {
         newHolder->context->SetUserData(userDataConstructor, userDataDestroyer);
     }
@@ -243,6 +260,7 @@ bool VCLG::Graph::Compile(std::shared_ptr<VCL::MetaState> state) {
             oldUseCount = previous->counter.load();
         }
     }
+    
     previous = current;
     current = newHolder;
 
@@ -291,6 +309,7 @@ bool VCLG::Graph::GetNodesOrder(std::vector<uint32_t>& order) {
             order.push_back(currentNodeIdx);
         } else {
             order.erase(std::remove(order.begin(), order.end(), currentNodeIdx), order.end());
+            order.push_back(currentNodeIdx);
         }
 
         for (auto& connection : connections) {

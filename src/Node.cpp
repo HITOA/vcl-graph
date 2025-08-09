@@ -18,20 +18,17 @@ void VCLG::Node::Reset(std::shared_ptr<VCL::DirectiveRegistry> registry, bool co
     std::unique_ptr<VCL::Parser> parser = VCL::Parser::Create(logger);
     parser->SetDirectiveRegistry(registry);
     program = parser->Parse(source);
-
-    NodeMetadata visitor{};
-    visitor.Process(this);
-
-    if (inputs.empty() && outputs.empty())
-        throw std::runtime_error{ "Node doesn't have any inputs nor outputs port." };
-
-    if (entrypoint == nullptr)
-        throw std::runtime_error{ "Node doesn't have any entry point." };
     
     // Compiling node with temporary program to verify and get metadata
     if (compile) {
+        NodeMetadata visitor{};
+        visitor.Process(this);
+
+        if (inputs.empty() && outputs.empty())
+            throw std::runtime_error{ "Node doesn't have any inputs nor outputs port." };
+
         std::unique_ptr<VCL::ExecutionSession> session = VCL::ExecutionSession::Create(logger);
-        std::unique_ptr<VCL::Module> module = session->CreateModule(parser->Parse(source));
+        std::unique_ptr<VCL::Module> module = session->CreateModule(std::move(program));
 
         std::shared_ptr<VCL::MetaState> state = VCL::MetaState::Create();
 
@@ -41,6 +38,8 @@ void VCLG::Node::Reset(std::shared_ptr<VCL::DirectiveRegistry> registry, bool co
         module->Verify();
 
         OnMetaState(state);
+
+        program = parser->Parse(source);
     }
 }
 
@@ -54,8 +53,4 @@ const std::vector<std::shared_ptr<VCLG::Port>>& VCLG::Node::GetInputs() {
 
 const std::vector<std::shared_ptr<VCLG::Port>>& VCLG::Node::GetOutputs() {
     return outputs;
-}
-
-VCL::ASTFunctionDeclaration* VCLG::Node::GetEntrypoint() {
-    return entrypoint;
 }

@@ -1,5 +1,6 @@
 #include <VCLG/ExecutionContext.hpp>
 
+#include <iostream>
 
 
 VCLG::ExecutionContext::ExecutionContext(std::unique_ptr<VCL::ASTProgram> program, 
@@ -9,7 +10,7 @@ VCLG::ExecutionContext::ExecutionContext(std::unique_ptr<VCL::ASTProgram> progra
     std::unique_ptr<VCL::Module> module = session->CreateModule(std::move(program));
     module->SetDirectiveRegistry(registry);
     module->SetMetaState(state);
-    module->Emit();
+    module->Emit(VCL::ModuleDebugInformationSettings{ true, true });
     module->Verify();
     module->Optimize();
 
@@ -41,13 +42,13 @@ VCLG::ExecutionContext::ExecutionContext(std::unique_ptr<VCL::ASTProgram> progra
 }
 
 VCLG::ExecutionContext::~ExecutionContext() {
-    if (userDataDestroyer)
-        userDataDestroyer(userData);
+    if (this->userDataDestroyer)
+        this->userDataDestroyer(userData);
 }
 
 void VCLG::ExecutionContext::SetUserData(std::function<void*(ExecutionContext*)> userDataConstructor, std::function<void(void*)> userDataDestroyer) {
-    if (userDataDestroyer)
-        userDataDestroyer(userData);
+    if (this->userDataDestroyer)
+        this->userDataDestroyer(userData);
     userData = userDataConstructor(this);
     this->userDataDestroyer = userDataDestroyer;
 }

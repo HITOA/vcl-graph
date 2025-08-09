@@ -101,7 +101,7 @@ namespace VCLG {
 
             ExecutionContext* operator->();
 
-            operator bool() const { return holder->context != nullptr; }
+            operator bool() const { return holder != nullptr; }
 
         private:
             ExecutionContextHolder* holder;

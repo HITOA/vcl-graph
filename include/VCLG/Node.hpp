@@ -20,7 +20,6 @@ namespace VCLG {
 
         const std::vector<std::shared_ptr<Port>>& GetInputs();
         const std::vector<std::shared_ptr<Port>>& GetOutputs();
-        VCL::ASTFunctionDeclaration* GetEntrypoint();
 
         virtual void OnMetaState(std::shared_ptr<VCL::MetaState> state) {};
         
@@ -31,8 +30,6 @@ namespace VCLG {
 
         std::vector<std::shared_ptr<Port>> inputs;
         std::vector<std::shared_ptr<Port>> outputs;
-
-        VCL::ASTFunctionDeclaration* entrypoint;
 
         friend class NodeMetadata;
         friend class NodeProcessor;

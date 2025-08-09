@@ -14,7 +14,8 @@ namespace VCLG {
     class NodeProcessor : public VCL::ASTVisitor {
     public:
         NodeProcessor() = delete;
-        NodeProcessor(const std::unordered_map<std::string, std::string>& inputsRemapping, const std::unordered_set<std::string>& outputs);
+        NodeProcessor(const std::unordered_map<std::string, std::string>& inputsRemapping, const std::unordered_set<std::string>& outputs, 
+            std::unordered_map<std::string, Port*>& inputToPort, std::vector<std::string>& nodesEntrypoint);
         ~NodeProcessor() = default;
         
         bool Process(Node* node, uint32_t nodeIdx);
@@ -51,11 +52,14 @@ namespace VCLG {
 
     private:
         Node* node;
+        uint32_t inputIdx;
         std::string symbolPrefix;
         bool removeCurrentGlobalStatement;
         std::unique_ptr<RenamingScopeManager> scope;
-        const std::unordered_map<std::string, std::string>& inputsRemapping{};
-        const std::unordered_set<std::string>& outputs{};
+        const std::unordered_map<std::string, std::string>& inputsRemapping;
+        const std::unordered_set<std::string>& outputs;
+        std::unordered_map<std::string, Port*>& inputToPort;
+        std::vector<std::string>& nodesEntrypoint;
     };
 
 }
