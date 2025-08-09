@@ -231,7 +231,7 @@ bool VCLG::Graph::Compile(std::shared_ptr<VCL::MetaState> state) {
         
         logger->Debug("{}", pp.GetBuffer());
     }
-
+    
     std::shared_ptr<ExecutionContextHolder> newHolder = CreateExecutionContext(std::move(program), state);
 
     uint32_t i = 0;

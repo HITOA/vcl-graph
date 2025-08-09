@@ -206,24 +206,28 @@ void VCLG::NodeProcessor::VisitIdentifierExpression(VCL::ASTIdentifierExpression
 }
 
 void VCLG::NodeProcessor::VisitVariableDeclaration(VCL::ASTVariableDeclaration* node) {
+    if (node->attributes.HasAttributeByName(KEEP_NAME_ATTRIBUTE)) {
+        if (node->expression)
+            node->expression->Accept(this);
+        return;
+    }
+    
     std::string newName = node->name;
     if (scope->IsCurrentScopeGlobal()) {
         newName = symbolPrefix + newName;
 
-        if (node->type->IsExtern()) {
-            if (inputsRemapping.count(newName)) {
-                removeCurrentGlobalStatement = true;
-                scope->PushNewName(node->name, inputsRemapping.at(newName));
-            } else if (outputs.count(newName)) {
-                node->type->qualifiers = VCL::TypeInfo::QualifierFlag::None;
-                scope->PushNewName(node->name, newName);
-                node->name = newName;
-            } else {
-                if (node->type->IsInput())
-                    inputToPort[newName] = this->node->GetInputs()[inputIdx].get();
-                scope->PushNewName(node->name, newName);
-                node->name = newName;
-            }
+        if (inputsRemapping.count(newName)) {
+            removeCurrentGlobalStatement = true;
+            scope->PushNewName(node->name, inputsRemapping.at(newName));
+        } else if (outputs.count(newName)) {
+            node->type->qualifiers = VCL::TypeInfo::QualifierFlag::None;
+            scope->PushNewName(node->name, newName);
+            node->name = newName;
+        } else {
+            if (node->type->IsInput())
+                inputToPort[newName] = this->node->GetInputs()[inputIdx].get();
+            scope->PushNewName(node->name, newName);
+            node->name = newName;
         }
 
         if (node->type->IsInput())
