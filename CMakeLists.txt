@@ -10,11 +10,14 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/vcl)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/tlsf)
 
-file(GLOB_RECURSE vclg_source_files "src/*/*.*")
+file(GLOB_RECURSE vclg_source_files "src/*.*")
 add_library(vclg STATIC ${vclg_source_files})
 target_include_directories(vclg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 set_property(TARGET vclg PROPERTY COMPILE_WARNING_AS_ERROR ON)
 
-target_link_libraries(vclg vcl)
+target_link_libraries(vclg vcl tlsf)
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/example)
