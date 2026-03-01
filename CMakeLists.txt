@@ -18,6 +18,6 @@ target_include_directories(vclg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 set_property(TARGET vclg PROPERTY COMPILE_WARNING_AS_ERROR ON)
 
-target_link_libraries(vclg vcl tlsf)
+target_link_libraries(vclg PUBLIC vcl tlsf)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/example)
