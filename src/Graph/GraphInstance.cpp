@@ -29,7 +29,7 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
 
         Identity instancedPortIdentity = identityProvider.Next();
         Port* instancedPort = (Port*)allocator->Allocate(sizeof(Port), 4);
-        new (instancedPort) Port{ instancedPortIdentity, port->GetDecl()->GetValueType().GetType(), port->GetDisplayName(), kind, instancedPortIdentity };
+        new (instancedPort) Port{ instancedNodeIdentity, port->GetDecl()->GetValueType().GetType(), port->GetDisplayName(), kind, instancedPortIdentity };
 
         storage.AddPort(instancedPort);
 
