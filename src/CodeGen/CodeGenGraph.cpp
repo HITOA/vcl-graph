@@ -53,6 +53,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
     instance->CreateASTContext();
     instance->CreateExportSymbolTable();
     instance->CreateImportModuleTable();
+    instance->CreateDefineTable();
 
     VCL::Lexer lexer{ source->GetBufferRef(), 
         instance->GetCompilerContext().GetDiagnosticReporter(), 
@@ -63,7 +64,8 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         instance->GetCompilerContext().GetIdentifierTable(),
         instance->GetCompilerContext().GetDirectiveRegistry(),
         instance->GetExportSymbolTable(),
-        instance->GetImportModuleTable() };
+        instance->GetImportModuleTable(),
+        instance->GetDefineTable() };
     VCL::Parser parser{ stream, sema, instance->GetCompilerContext().GetAttributeTable() };
     
     if (!parser.Parse())
