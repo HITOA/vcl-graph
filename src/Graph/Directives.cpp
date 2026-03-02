@@ -1,0 +1,34 @@
+#include <VCLG/Graph/Directives.hpp>
+
+#include <VCL/Core/Diagnostic.hpp>
+#include <VCL/Sema/Sema.hpp>
+
+
+bool VCLG::MetadataDirective::OnSema(VCL::Sema& sema, VCL::DirectiveDecl* decl) {
+    VCL::IdentifierInfo* identifier = sema.GetIdentifierTable().Get(name);
+    
+    if (decl->GetArgs().size() > 1) {
+        sema.GetDiagnosticReporter().Error(VCL::Diagnostic::DirectiveError, "metadata directive only take one argument")
+            .AddHint(VCL::DiagnosticHint{ decl->GetSourceRange() })
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
+        return false;
+    }
+    if (decl->GetArgs().size() < 1) {
+        sema.GetDiagnosticReporter().Error(VCL::Diagnostic::DirectiveError, "metadata directive is missing its import path")
+            .AddHint(VCL::DiagnosticHint{ decl->GetSourceRange() })
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
+        return false;
+    }
+    if (decl->GetArgs()[0]->GetConstantValueClass() != type) {
+        sema.GetDiagnosticReporter().Error(VCL::Diagnostic::DirectiveError, "metadata directive wrong type")
+            .AddHint(VCL::DiagnosticHint{ decl->GetSourceRange() })
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
+        return false;
+    }
+
+    sema.GetDefineTable().Add(identifier, decl->GetArgs()[0]);
+    return true;
+}

@@ -51,16 +51,18 @@ namespace VCLG {
 
     class SourceNode : public Node {    
     public:
-        SourceNode(const std::string& source, llvm::ArrayRef<Port*> inPorts, llvm::ArrayRef<Port*> outPorts, Identity identity) :
-                source{ source }, inPorts{ inPorts }, outPorts{ outPorts }, Node{ Node::SourceNodeClass, identity } {}
+        SourceNode(const std::string& source, llvm::StringRef displayName, llvm::ArrayRef<Port*> inPorts, llvm::ArrayRef<Port*> outPorts, Identity identity) :
+                source{ source }, displayName{ displayName }, inPorts{ inPorts }, outPorts{ outPorts }, Node{ Node::SourceNodeClass, identity } {}
         ~SourceNode() = default;
         
         inline llvm::StringRef GetSource() const { return source; }
+        inline llvm::StringRef GetDisplayName() const { return displayName; }
         inline llvm::ArrayRef<Port*> GetInputs() const { return inPorts; }
         inline llvm::ArrayRef<Port*> GetOutputs() const { return outPorts; }
 
     private:
         std::string source;
+        llvm::StringRef displayName;
         llvm::SmallVector<Port*, llvm::CalculateSmallVectorDefaultInlinedElements<Port*>::value / 2> inPorts;
         llvm::SmallVector<Port*, llvm::CalculateSmallVectorDefaultInlinedElements<Port*>::value / 2> outPorts;
     };

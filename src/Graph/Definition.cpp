@@ -1,8 +1,12 @@
 #include <VCLG/Graph/Definition.hpp>
 
+#include <VCLG/Graph/Directives.hpp>
+
 #include <VCL/Core/Diagnostic.hpp>
 #include <VCL/Core/Format.hpp>
+#include <VCL/Core/Directive.hpp>
 #include <VCL/AST/Decl.hpp>
+#include <VCL/Sema/DefineTable.hpp>
 #include <VCL/Frontend/FrontendActions.hpp>
 #include <VCL/Frontend/CompilerInstance.hpp>
 
@@ -12,6 +16,10 @@ VCLG::DefinitionRegistry::DefinitionRegistry(VCL::CompilerContext& cc, std::uniq
     nodeProcessAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("NodeProcess"), 0, 0);
     inputAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Input"), 1, 1);
     outputAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Output"), 1, 1);
+
+    VCL::IdentifierInfo* nodeNameDirectiveIdentifier = cc.GetIdentifierTable().Get("node_name");
+
+    cc.GetDirectiveRegistry().CreateDirectiveHandler<MetadataDirective>(nodeNameDirectiveIdentifier, "NODE_NAME", VCL::ConstantValue::ConstantStringClass);
 }
 
 VCLG::DefinitionRegistry::~DefinitionRegistry() {
@@ -67,9 +75,11 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
 
     ports.append(outPorts);
 
+    std::string displayName = GetStringDefine(instance, "NODE_NAME");
+
     size_t portDefSize = SourceNodeDefinition::totalSizeToAlloc<SourcePortDefinition*>(ports.size());
     SourceNodeDefinition* definition = (SourceNodeDefinition*)allocator->Allocate(sizeof(SourceNodeDefinition) + portDefSize, 4);
-    new (definition) SourceNodeDefinition{ instance, hasInstanceData, ports };
+    new (definition) SourceNodeDefinition{ instance, displayName, hasInstanceData, ports };
     definitions.insert({ source->GetBufferIdentifier(), definition });
     return definition;
 }
@@ -107,4 +117,17 @@ std::string VCLG::DefinitionRegistry::GetStringAttribute(VCL::AttributeInstance*
         return std::string{};
     }
     return VCL::ParseStringLiteral(((VCL::ConstantString*)arg)->GetString());
+}
+
+std::string VCLG::DefinitionRegistry::GetStringDefine(std::shared_ptr<VCL::CompilerInstance> instance, llvm::StringRef name) {
+    VCL::IdentifierInfo* identifier = instance->GetCompilerContext().GetIdentifierTable().Get(name);
+    VCL::ConstantValue* value = instance->GetDefineTable().Get(identifier);
+
+    if (!value)
+        return std::string{};
+
+    if (value->GetConstantValueClass() != VCL::ConstantValue::ConstantStringClass)
+        return std::string{};
+
+    return VCL::ParseStringLiteral(((VCL::ConstantString*)value)->GetString());
 }

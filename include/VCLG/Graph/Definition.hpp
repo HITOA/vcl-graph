@@ -43,8 +43,9 @@ namespace VCLG {
 
     public:
         SourceNodeDefinition() = delete;
-        SourceNodeDefinition(std::shared_ptr<VCL::CompilerInstance> instance, bool hasInstanceData, llvm::ArrayRef<SourcePortDefinition*> ports) 
-                : instance{ instance }, hasInstanceData{ hasInstanceData }, portCount{ ports.size() } {
+        SourceNodeDefinition(std::shared_ptr<VCL::CompilerInstance> instance, const std::string& displayName, 
+            bool hasInstanceData, llvm::ArrayRef<SourcePortDefinition*> ports) 
+                : instance{ instance }, displayName{ displayName }, hasInstanceData{ hasInstanceData }, portCount{ ports.size() } {
             std::uninitialized_copy(ports.begin(), ports.end(), getTrailingObjects());
         }
         SourceNodeDefinition(const SourceNodeDefinition& other) = delete;
@@ -53,11 +54,14 @@ namespace VCLG {
 
         SourceNodeDefinition& operator=(const SourceNodeDefinition& other) = delete;
         SourceNodeDefinition& operator=(SourceNodeDefinition&& other) = delete;
+        
+        inline llvm::StringRef GetDisplayName() const { return displayName; }
 
-        llvm::ArrayRef<SourcePortDefinition*> GetPorts() const { return { getTrailingObjects(), portCount }; }
+        inline llvm::ArrayRef<SourcePortDefinition*> GetPorts() const { return { getTrailingObjects(), portCount }; }
         
     private:
         std::shared_ptr<VCL::CompilerInstance> instance;
+        std::string displayName;
         bool hasInstanceData;
         size_t portCount;
     };
@@ -82,6 +86,7 @@ namespace VCLG {
         SourcePortDefinition* CreateSourcePortDefinition(VCL::VarDecl* varDecl);
 
         std::string GetStringAttribute(VCL::AttributeInstance* attribute);
+        std::string GetStringDefine(std::shared_ptr<VCL::CompilerInstance> instance, llvm::StringRef name);
 
     private:
         VCL::CompilerContext& cc;

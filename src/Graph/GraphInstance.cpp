@@ -40,7 +40,7 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
     }
 
     SourceNode* node = (SourceNode*)allocator->Allocate(sizeof(SourceNode), 4);
-    new (node) SourceNode{ source->GetBufferIdentifier().str(), inPorts, outPorts, instancedNodeIdentity };
+    new (node) SourceNode{ source->GetBufferIdentifier().str(), definition->GetDisplayName(), inPorts, outPorts, instancedNodeIdentity };
     storage.AddNode(node);
     return node;
 }
