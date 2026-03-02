@@ -1,7 +1,8 @@
 #include <VCLG/Graph/Definition.hpp>
 
-#include <VCL/AST/Decl.hpp>
 #include <VCL/Core/Diagnostic.hpp>
+#include <VCL/Core/Format.hpp>
+#include <VCL/AST/Decl.hpp>
 #include <VCL/Frontend/FrontendActions.hpp>
 #include <VCL/Frontend/CompilerInstance.hpp>
 
@@ -105,5 +106,5 @@ std::string VCLG::DefinitionRegistry::GetStringAttribute(VCL::AttributeInstance*
             .Report();
         return std::string{};
     }
-    return ((VCL::ConstantString*)arg)->GetString();
+    return VCL::ParseStringLiteral(((VCL::ConstantString*)arg)->GetString());
 }
