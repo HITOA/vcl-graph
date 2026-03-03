@@ -42,6 +42,12 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
     SourceNode* node = (SourceNode*)allocator->Allocate(sizeof(SourceNode), 4);
     new (node) SourceNode{ source->GetBufferIdentifier().str(), definition->GetDisplayName(), inPorts, outPorts, instancedNodeIdentity };
     storage.AddNode(node);
+
+    if (definition->HasFlag(SourceNodeDefinition::DefinitionNodeFlag::IsInputNode))
+        node->AddFlag(SourceNode::NodeFlag::IsInputNode);
+    if (definition->HasFlag(SourceNodeDefinition::DefinitionNodeFlag::IsOutputNode))
+        node->AddFlag(SourceNode::NodeFlag::IsOutputNode);
+
     return node;
 }
 

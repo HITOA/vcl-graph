@@ -22,4 +22,17 @@ namespace VCLG {
         VCL::ConstantValue::ConstantValueClass type;
     };
 
+    class MetadataFlagDirective : public VCL::DirectiveHandler {
+    public:
+        MetadataFlagDirective() = delete;
+        MetadataFlagDirective(const std::string& name) 
+                : name{ name } {}
+        ~MetadataFlagDirective() = default;
+
+        bool OnSema(VCL::Sema& sema, VCL::DirectiveDecl* decl) override;
+        
+    private:
+        std::string name;
+    };
+
 }

@@ -18,8 +18,12 @@ VCLG::DefinitionRegistry::DefinitionRegistry(VCL::CompilerContext& cc, std::uniq
     outputAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Output"), 1, 1);
 
     VCL::IdentifierInfo* nodeNameDirectiveIdentifier = cc.GetIdentifierTable().Get("node_name");
+    VCL::IdentifierInfo* graphInputDirectiveIdentifier = cc.GetIdentifierTable().Get("set_as_graph_input");
+    VCL::IdentifierInfo* graphOutputDirectiveIdentifier = cc.GetIdentifierTable().Get("set_as_graph_output");
 
     cc.GetDirectiveRegistry().CreateDirectiveHandler<MetadataDirective>(nodeNameDirectiveIdentifier, "NODE_NAME", VCL::ConstantValue::ConstantStringClass);
+    cc.GetDirectiveRegistry().CreateDirectiveHandler<MetadataFlagDirective>(graphInputDirectiveIdentifier, "IS_GRAPH_INPUT");
+    cc.GetDirectiveRegistry().CreateDirectiveHandler<MetadataFlagDirective>(graphOutputDirectiveIdentifier, "IS_GRAPH_OUTPUT");
 }
 
 VCLG::DefinitionRegistry::~DefinitionRegistry() {
@@ -57,6 +61,7 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
     llvm::SmallVector<SourcePortDefinition*> ports{};
     llvm::SmallVector<SourcePortDefinition*> outPorts{};
     bool hasInstanceData = false;
+    VCL::FunctionDecl* entrypoint = nullptr;
 
     for (auto it = tu->Begin(); it != tu->End(); ++it) {
         switch (it->GetDeclClass()) {
@@ -70,7 +75,27 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
                     hasInstanceData = true;
                 break;
             }
+            case VCL::Decl::FunctionDeclClass: {
+                VCL::FunctionDecl* decl = (VCL::FunctionDecl*)it.Get();
+                if (decl->HasAttribute(nodeProcessAttributeDefinition) != nullptr) {
+                    if (entrypoint != nullptr) {
+                        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+                            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+                            .Report();
+                        return nullptr;
+                    }
+                    entrypoint = decl;
+                }
+                break;
+            }
         }
+    }
+
+    if (entrypoint == nullptr) {
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
+        return nullptr;
     }
 
     ports.append(outPorts);
@@ -79,8 +104,14 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
 
     size_t portDefSize = SourceNodeDefinition::totalSizeToAlloc<SourcePortDefinition*>(ports.size());
     SourceNodeDefinition* definition = (SourceNodeDefinition*)allocator->Allocate(sizeof(SourceNodeDefinition) + portDefSize, 4);
-    new (definition) SourceNodeDefinition{ instance, displayName, hasInstanceData, ports };
+    new (definition) SourceNodeDefinition{ instance, displayName, entrypoint, hasInstanceData, ports };
     definitions.insert({ source->GetBufferIdentifier(), definition });
+
+    if (HasFlagDefined(instance, "IS_GRAPH_INPUT"))
+        definition->AddFlag(SourceNodeDefinition::DefinitionNodeFlag::IsInputNode);
+    if (HasFlagDefined(instance, "IS_GRAPH_OUTPUT"))
+        definition->AddFlag(SourceNodeDefinition::DefinitionNodeFlag::IsOutputNode);
+
     return definition;
 }
 
@@ -130,4 +161,11 @@ std::string VCLG::DefinitionRegistry::GetStringDefine(std::shared_ptr<VCL::Compi
         return std::string{};
 
     return VCL::ParseStringLiteral(((VCL::ConstantString*)value)->GetString());
+}
+
+bool VCLG::DefinitionRegistry::HasFlagDefined(std::shared_ptr<VCL::CompilerInstance> instance, llvm::StringRef name) {
+    VCL::IdentifierInfo* identifier = instance->GetCompilerContext().GetIdentifierTable().Get(name);
+    VCL::ConstantValue* value = instance->GetDefineTable().Get(identifier);
+
+    return value != nullptr;
 }

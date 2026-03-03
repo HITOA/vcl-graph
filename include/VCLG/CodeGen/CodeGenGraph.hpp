@@ -3,6 +3,7 @@
 #include <VCLG/Graph/GraphContext.hpp>
 #include <VCLG/Graph/GraphInstance.hpp>
 #include <VCLG/Graph/Node.hpp>
+#include <VCLG/CodeGen/CodeGenEntrypoint.hpp>
 
 #include <VCL/Sema/ModuleTable.hpp>
 
@@ -22,6 +23,13 @@ namespace VCLG {
         CodeGenGraph& operator=(const CodeGenGraph& other) = delete;
         CodeGenGraph& operator=(CodeGenGraph&& other) = delete;
 
+        inline GraphContext& GetGraphContext() const { return graphContext; }
+        inline GraphInstance& GetGraphInstance() const { return graph; }
+        inline llvm::LLVMContext& GetLLVMContext() const { return module.getContext(); }
+        inline llvm::Module& GetLLVMModule() const { return module; }
+
+        bool LinkNow();
+
         bool Emit();
         bool EmitSourceNode(SourceNode* node);
     
@@ -33,6 +41,7 @@ namespace VCLG {
         llvm::ArrayRef<Port*> GetNodeOutputs(Node* node);
 
     private:
+        std::unique_ptr<CodeGenEntrypoint> entrypoint;
         GraphContext& graphContext;
         GraphInstance& graph;
         llvm::Module& module;

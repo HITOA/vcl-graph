@@ -40,12 +40,19 @@ namespace VCLG {
 
     class SourceNodeDefinition final : public llvm::TrailingObjects<SourceNodeDefinition, SourcePortDefinition*> {
         friend class TrailingObjects;
+    
+    public:
+        enum class DefinitionNodeFlag : uint32_t {
+            None = 0,
+            IsInputNode = 1,
+            IsOutputNode = 2
+        };
 
     public:
         SourceNodeDefinition() = delete;
-        SourceNodeDefinition(std::shared_ptr<VCL::CompilerInstance> instance, const std::string& displayName, 
+        SourceNodeDefinition(std::shared_ptr<VCL::CompilerInstance> instance, const std::string& displayName, VCL::FunctionDecl* entrypoint, 
             bool hasInstanceData, llvm::ArrayRef<SourcePortDefinition*> ports) 
-                : instance{ instance }, displayName{ displayName }, hasInstanceData{ hasInstanceData }, portCount{ ports.size() } {
+                : instance{ instance }, displayName{ displayName }, entrypoint{ entrypoint }, hasInstanceData{ hasInstanceData }, portCount{ ports.size() } {
             std::uninitialized_copy(ports.begin(), ports.end(), getTrailingObjects());
         }
         SourceNodeDefinition(const SourceNodeDefinition& other) = delete;
@@ -57,11 +64,18 @@ namespace VCLG {
         
         inline llvm::StringRef GetDisplayName() const { return displayName; }
 
+        inline VCL::FunctionDecl* GetEntrypoint() const { return entrypoint; }
+
         inline llvm::ArrayRef<SourcePortDefinition*> GetPorts() const { return { getTrailingObjects(), portCount }; }
+
+        inline bool HasFlag(DefinitionNodeFlag flag) const { return ((uint32_t)flags & (uint32_t)flag) != 0; }
+        inline void AddFlag(DefinitionNodeFlag flag) { this->flags = (DefinitionNodeFlag)((uint32_t)flags | (uint32_t)flag); }
         
     private:
         std::shared_ptr<VCL::CompilerInstance> instance;
         std::string displayName;
+        DefinitionNodeFlag flags;
+        VCL::FunctionDecl* entrypoint;
         bool hasInstanceData;
         size_t portCount;
     };
@@ -87,6 +101,8 @@ namespace VCLG {
 
         std::string GetStringAttribute(VCL::AttributeInstance* attribute);
         std::string GetStringDefine(std::shared_ptr<VCL::CompilerInstance> instance, llvm::StringRef name);
+
+        bool HasFlagDefined(std::shared_ptr<VCL::CompilerInstance> instance, llvm::StringRef name);
 
     private:
         VCL::CompilerContext& cc;

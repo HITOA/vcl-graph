@@ -13,6 +13,8 @@
 #include <VCL/CodeGen/Optimizer.hpp>
 
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
+#include <llvm/Linker/Linker.h>
+#include <llvm/Transforms/Utils/Cloning.h>
 
 #include <queue>
 #include <unordered_set>
@@ -21,11 +23,33 @@
 
 
 VCLG::CodeGenGraph::CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module) :
-        graphContext{ graphContext }, graph{ graph }, module{ module }, aggregatedImportedModuleTable{}, nodeCompilerInstances{}, inPortToOutPort{}, outPortGlobalVar{} {
+        graphContext{ graphContext }, graph{ graph }, module{ module }, 
+        aggregatedImportedModuleTable{}, nodeCompilerInstances{}, inPortToOutPort{}, outPortGlobalVar{} {
     
 }
 
+bool VCLG::CodeGenGraph::LinkNow() {
+    llvm::Linker linker{ module };
+
+    for (auto mod : aggregatedImportedModuleTable) {
+        std::unique_ptr<llvm::Module> clonedModule = mod.second->GetModule().withModuleDo([this](llvm::Module& module){
+            return llvm::CloneModule(module);
+        });
+        if (linker.linkInModule(std::move(clonedModule))) {
+            graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+                .SetCompilerInfo(__FILE__, __func__, __LINE__)
+                .Report();
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool VCLG::CodeGenGraph::Emit() {
+    entrypoint = std::make_unique<CodeGenEntrypoint>(*this);
+    entrypoint->Begin();
+
     BuildPortMap();
     std::vector<Node*> nodes = BuildOrderedNodeList();
 
@@ -40,6 +64,7 @@ bool VCLG::CodeGenGraph::Emit() {
         }
     }
 
+    entrypoint->End();
     return true;
 }
 
@@ -106,7 +131,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
                 .Report();
             return false;
         }
-        llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value());
+        llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value(), true);
         if (!variable) {
             graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)
@@ -130,7 +155,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
             return false;
         }
 
-        llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value());
+        llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value(), true);
         if (!variable) {
             graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)
@@ -140,7 +165,22 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         outPortGlobalVar.insert({ outPort, variable });
     }
 
-    return true;
+    // Add node process function to the entrypoint
+    std::optional<std::string> mangledEntrypointName = instance->GetMangledSymbolName(nodeDefinition->GetEntrypoint()->GetIdentifierInfo()->GetName());
+    if (!mangledEntrypointName.has_value()) {
+        graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
+        return false;
+    }
+    llvm::Function* processFunction = module.getFunction(mangledEntrypointName.value());
+    if (!processFunction) {
+        graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
+        return false;
+    }
+    return entrypoint->AddNodeEntrypoint(processFunction);
 }
 
 void VCLG::CodeGenGraph::BuildPortMap() {
