@@ -45,6 +45,7 @@ namespace VCLG {
         GraphContext& graphContext;
         GraphInstance& graph;
         llvm::Module& module;
+        VCL::CompilerContext cc;
         VCL::ModuleTable aggregatedImportedModuleTable;
         
         std::vector<std::shared_ptr<VCL::CompilerInstance>> nodeCompilerInstances;

@@ -23,9 +23,18 @@
 
 
 VCLG::CodeGenGraph::CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module) :
-        graphContext{ graphContext }, graph{ graph }, module{ module }, 
+        graphContext{ graphContext }, graph{ graph }, module{ module }, cc{ graphContext.GetCompilerContext().GetInvocation() },
         aggregatedImportedModuleTable{}, nodeCompilerInstances{}, inPortToOutPort{}, outPortGlobalVar{} {
     
+    cc.CopyDiagnosticEngine(graphContext.GetCompilerContext());
+    cc.CopySourceManager(graphContext.GetCompilerContext());
+    cc.CopyIdentifierTable(graphContext.GetCompilerContext());
+    cc.CopyAttributeTable(graphContext.GetCompilerContext());
+    cc.CopyDirectiveRegistry(graphContext.GetCompilerContext());
+    cc.CopyTarget(graphContext.GetCompilerContext());
+    cc.CreateTypeCache();
+    cc.CreateModuleCache();
+    cc.CreateLLVMContext();
 }
 
 bool VCLG::CodeGenGraph::LinkNow() {
@@ -36,7 +45,7 @@ bool VCLG::CodeGenGraph::LinkNow() {
             return llvm::CloneModule(module);
         });
         if (linker.linkInModule(std::move(clonedModule))) {
-            graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)
                 .Report();
             return false;
@@ -69,10 +78,10 @@ bool VCLG::CodeGenGraph::Emit() {
 }
 
 bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
-    VCL::Source* source = graphContext.GetCompilerContext().GetSourceManager().LoadFromMemory("", node->GetSource());
+    VCL::Source* source = cc.GetSourceManager().LoadFromMemory("", node->GetSource());
     SourceNodeDefinition* nodeDefinition = graphContext.GetDefinitionRegistry().GetOrCreateSourceNodeDefinition(source);
 
-    std::shared_ptr<VCL::CompilerInstance> instance = graphContext.GetCompilerContext().CreateInstance();
+    std::shared_ptr<VCL::CompilerInstance> instance = cc.CreateInstance();
     nodeCompilerInstances.push_back(instance);
     
     instance->CreateASTContext();
@@ -84,7 +93,9 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         instance->GetCompilerContext().GetDiagnosticReporter(), 
         instance->GetCompilerContext().GetIdentifierTable() };
     VCL::TokenStream stream{ lexer };
-    VCL::Sema sema{ instance->GetASTContext(),
+    VCL::Sema sema{ 
+        instance->GetCompilerContext(),
+        instance->GetASTContext(),
         instance->GetCompilerContext().GetDiagnosticReporter(),
         instance->GetCompilerContext().GetIdentifierTable(),
         instance->GetCompilerContext().GetDirectiveRegistry(),
@@ -116,7 +127,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
             continue;
         Port* connectedPort = inPortToOutPort[inPort];
         if (!outPortGlobalVar.count(connectedPort)) {
-            graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)
                 .Report();
             return false;
@@ -126,14 +137,14 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         SourcePortDefinition* inPortDefinition = nodeDefinition->GetPorts()[i];
         std::optional<std::string> mangledName = instance->GetMangledSymbolName(inPortDefinition->GetName());
         if (!mangledName.has_value()) {
-            graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)
                 .Report();
             return false;
         }
         llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value(), true);
         if (!variable) {
-            graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)
                 .Report();
             return false;
@@ -149,7 +160,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         SourcePortDefinition* outPortDefinition = nodeDefinition->GetPorts()[i + node->GetInputs().size()];
         std::optional<std::string> mangledName = instance->GetMangledSymbolName(outPortDefinition->GetName());
         if (!mangledName.has_value()) {
-            graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)
                 .Report();
             return false;
@@ -157,7 +168,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
 
         llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value(), true);
         if (!variable) {
-            graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)
                 .Report();
             return false;
@@ -168,14 +179,14 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
     // Add node process function to the entrypoint
     std::optional<std::string> mangledEntrypointName = instance->GetMangledSymbolName(nodeDefinition->GetEntrypoint()->GetIdentifierInfo()->GetName());
     if (!mangledEntrypointName.has_value()) {
-        graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
             .SetCompilerInfo(__FILE__, __func__, __LINE__)
             .Report();
         return false;
     }
     llvm::Function* processFunction = module.getFunction(mangledEntrypointName.value());
     if (!processFunction) {
-        graphContext.GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
             .SetCompilerInfo(__FILE__, __func__, __LINE__)
             .Report();
         return false;
