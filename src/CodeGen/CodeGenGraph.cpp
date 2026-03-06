@@ -123,16 +123,6 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
 
     for (size_t i = 0; i < node->GetInputs().size(); ++i) {
         Port* inPort = node->GetInputs()[i];
-        if (!inPortToOutPort.count(inPort))
-            continue;
-        Port* connectedPort = inPortToOutPort[inPort];
-        if (!outPortGlobalVar.count(connectedPort)) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
-            return false;
-        }
-        llvm::GlobalVariable* connectedVariable = outPortGlobalVar[connectedPort];
 
         SourcePortDefinition* inPortDefinition = nodeDefinition->GetPorts()[i];
         std::optional<std::string> mangledName = instance->GetMangledSymbolName(inPortDefinition->GetName());
@@ -143,6 +133,27 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
             return false;
         }
         llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value(), true);
+
+        if (!inPortToOutPort.count(inPort)) {
+            if (inPort->GetInitializerOverride() != nullptr) {
+                VCL::Type* type = VCL::Type::GetCanonicalType(inPort->GetType());
+                llvm::Constant* value = cgm.GenerateConstantValue(inPort->GetInitializerOverride());
+                if (type->GetTypeClass() == VCL::Type::VectorTypeClass)
+                    value = llvm::ConstantDataVector::getSplat(cc.GetTarget().GetVectorWidthInElement(), value);
+                variable->setInitializer(value);
+            }
+            continue;
+        }
+
+        Port* connectedPort = inPortToOutPort[inPort];
+        if (!outPortGlobalVar.count(connectedPort)) {
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+                .SetCompilerInfo(__FILE__, __func__, __LINE__)
+                .Report();
+            return false;
+        }
+        llvm::GlobalVariable* connectedVariable = outPortGlobalVar[connectedPort];
+
         if (!variable) {
             cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)

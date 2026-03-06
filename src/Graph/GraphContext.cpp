@@ -17,6 +17,8 @@ VCLG::GraphContext::GraphContext(std::shared_ptr<VCL::CompilerInvocation> invoca
     definitionRegistry = llvm::makeIntrusiveRefCnt<DefinitionRegistry>(cc);
 }
 
-std::shared_ptr<VCLG::GraphInstance> VCLG::GraphContext::CreateInstance() {
-    return std::make_shared<GraphInstance>(*this);
+std::shared_ptr<VCLG::GraphInstance> VCLG::GraphContext::CreateInstance(
+            std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator,
+            std::unique_ptr<Allocator> allocator) {
+    return std::make_shared<GraphInstance>(*this, userDataTailAllocator, std::move(allocator));
 }

@@ -32,7 +32,7 @@ namespace VCLG {
         Node(NodeClass nodeClass, Identity identity) : nodeClass{ nodeClass }, identity{ identity }, flags{ NodeFlag::None } {}
         Node(const Node& other) = delete;
         Node(Node&& other) = delete;
-        ~Node() = default;
+        virtual ~Node() = default;
 
         Node& operator=(const Node& other) = delete;
         Node& operator=(Node&& other) = delete;

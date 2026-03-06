@@ -6,8 +6,10 @@
 #include <VCLG/Graph/Port.hpp>
 #include <VCLG/Graph/Node.hpp>
 #include <VCLG/Graph/Connection.hpp>
+#include <VCLG/Graph/GraphUserDataTailAllocator.hpp>
 
 #include <vector>
+#include <memory>
 
 
 namespace VCLG {
@@ -16,7 +18,9 @@ namespace VCLG {
     class GraphInstance {
     public:
         GraphInstance() = delete;
-        GraphInstance(GraphContext& graphContext, std::unique_ptr<Allocator> allocator = std::make_unique<TLSFAllocator>());
+        GraphInstance(GraphContext& graphContext, 
+            std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTailAllocator>(),
+            std::unique_ptr<Allocator> allocator = std::make_unique<TLSFAllocator>());
         GraphInstance(const GraphInstance& other) = delete;
         GraphInstance(GraphInstance&& other) = delete;
         ~GraphInstance();
@@ -27,14 +31,13 @@ namespace VCLG {
         inline llvm::ArrayRef<Node*> GetNodes() const { return storage.GetNodes(); }
         inline llvm::ArrayRef<Connection> GetConnections() const { return connections; }
 
-
         inline Node* GetNodeByIdentity(Identity identity) const { return storage.GetNodeByIdentity(identity); }
         inline Port* GetPortByIdentity(Identity identity) const { return storage.GetPortByIdentity(identity); }
-
 
         SourceNode* InstantiateSourceNode(VCL::Source* source);
         
         void DestroyNode(Node* node);
+        void DestroyConnection(Identity identity);
 
         bool Connect(Identity portAIdentity, Identity portBIdentity);
         bool Connect(Port* portA, Port* portB);
@@ -42,6 +45,7 @@ namespace VCLG {
         void Reset();
 
     private:
+        void DestroyNodeConnections(Node* node);
         void DestroySourceNode(SourceNode* node);
 
         bool ConnectOutputToInput(Port* outPort, Port* inPort);
@@ -56,6 +60,8 @@ namespace VCLG {
         GraphStorage storage;
 
         std::vector<Connection> connections;
+
+        std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator;
     };
 
 }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <VCLG/Graph/Definition.hpp>
+#include <VCLG/Graph/GraphUserDataTailAllocator.hpp>
+#include <VCLG/Core/Allocator.hpp>
 
 #include <VCL/Frontend/CompilerContext.hpp>
 
@@ -26,7 +28,9 @@ namespace VCLG {
         inline VCL::CompilerContext& GetCompilerContext() { return cc; }
         inline VCLG::DefinitionRegistry& GetDefinitionRegistry() { return *definitionRegistry; }
 
-        std::shared_ptr<GraphInstance> CreateInstance();
+        std::shared_ptr<GraphInstance> CreateInstance(
+            std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTailAllocator>(),
+            std::unique_ptr<Allocator> allocator = std::make_unique<TLSFAllocator>());
 
     private:
         VCL::CompilerContext cc;
