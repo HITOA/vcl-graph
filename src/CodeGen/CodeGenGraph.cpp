@@ -15,6 +15,7 @@
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/Linker/Linker.h>
 #include <llvm/Transforms/Utils/Cloning.h>
+#include <llvm/IR/Verifier.h>
 
 #include <queue>
 #include <unordered_set>
@@ -50,6 +51,13 @@ bool VCLG::CodeGenGraph::LinkNow() {
                 .Report();
             return false;
         }
+    }
+
+    if (llvm::verifyModule(module, &llvm::errs())) {
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
+        return false;
     }
 
     return true;
@@ -118,7 +126,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         instance->GetImportModuleTable(),
         instance->GetCompilerContext().GetAttributeTable(),
         instance->GetCompilerContext().GetIdentifierTable() };
-    if (!cgm.Emit())
+    if (!cgm.Emit(false))
         return false;
 
     for (size_t i = 0; i < node->GetInputs().size(); ++i) {
