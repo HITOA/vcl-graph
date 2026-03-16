@@ -44,6 +44,8 @@ namespace VCLG {
         bool SubstituteType(Node* node, VCL::Type* baseType, VCL::Type* connectedType);
         bool SubstituteExpression(Node* node, VCL::DeclRefExpr* baseExpr, VCL::ConstantScalar* scalar);
 
+        VCL::Type* GenerateSubstitutedType(VCL::ASTContext& globalASTContext, Node* node, VCL::Type* baseType);
+
     private:
         llvm::BumpPtrAllocator allocator{};
 

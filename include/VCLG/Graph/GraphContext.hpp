@@ -27,6 +27,7 @@ namespace VCLG {
 
         inline VCL::CompilerContext& GetCompilerContext() { return cc; }
         inline VCLG::DefinitionRegistry& GetDefinitionRegistry() { return *definitionRegistry; }
+        inline VCL::ASTContext& GetGlobalASTContext() { return *globalASTContext; }
 
         std::shared_ptr<GraphInstance> CreateInstance(
             std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTailAllocator>(),
@@ -35,6 +36,8 @@ namespace VCLG {
     private:
         VCL::CompilerContext cc;
         llvm::IntrusiveRefCntPtr<VCLG::DefinitionRegistry> definitionRegistry;
+
+        llvm::IntrusiveRefCntPtr<VCL::ASTContext> globalASTContext;
     };
 
 }

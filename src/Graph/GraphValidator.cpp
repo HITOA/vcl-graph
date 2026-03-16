@@ -21,12 +21,28 @@ VCLG::GraphValidator::GraphValidator() : inPortToOutPort{}, connectedOutPort{} {
 bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
     ClearSubstitutionTable(graph);
     std::vector<Node*> dependentNodes = BuildOrderedDependentNodeList(graph);
+    VCL::ASTContext& globalASTContext = graph.GetGraphContext().GetGlobalASTContext();
+    
+    for (Node* node : dependentNodes) {
+        for (Port* inPort : Node::GetNodeInputs(node)) {
+            if (!inPort->IsDependent())
+                continue;
+            inPort->SetTentativeType(nullptr);
+        }
+        for (Port* outPort : Node::GetNodeOutputs(node)) {
+            if (!outPort->IsDependent())
+                continue;
+            outPort->SetTentativeType(nullptr);
+        }
+    }
 
     for (Node* node : dependentNodes) {
         for (Port* inPort : Node::GetNodeInputs(node)) {
             if (inPortToOutPort.count(inPort)) {
                 Port* outPort = inPortToOutPort[inPort];
-                if (!SubstituteType(node, inPort->GetType(), outPort->GetLastType()))
+                if (outPort->IsDependent() && outPort->GetTentativeType() == nullptr)
+                    continue;
+                if (!SubstituteType(node, inPort->GetType(), outPort->GetLastTentativeType()))
                     return false;
             }
         }
@@ -34,14 +50,38 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
             if (connectedOutPort.count(outPort)) {
                 for (const Connection& connection : graph.GetConnections()) {
                     Port* inPort = graph.GetPortByIdentity(connection.GetInputPortIdentity());
-                    if (inPort->IsDependent())
+                    if (inPort->IsDependent() && inPort->GetTentativeType() == nullptr)
                         continue;
                     if (outPort == graph.GetPortByIdentity(connection.GetOutputPortIdentity())) {
-                        if (!SubstituteType(node, outPort->GetType(), inPort->GetLastType()))
+                        if (!SubstituteType(node, outPort->GetType(), inPort->GetLastTentativeType()))
                             return false;
                     }
                 }
             }
+        }
+
+        for (Port* inPort : Node::GetNodeInputs(node)) {
+            if (!inPort->IsDependent())
+                continue;
+            inPort->SetTentativeType(GenerateSubstitutedType(globalASTContext, node, inPort->GetType()));
+        }
+        for (Port* outPort : Node::GetNodeOutputs(node)) {
+            if (!outPort->IsDependent())
+                continue;
+            outPort->SetTentativeType(GenerateSubstitutedType(globalASTContext, node, outPort->GetType()));
+        }
+    }
+    
+    for (Node* node : dependentNodes) {
+        for (Port* inPort : Node::GetNodeInputs(node)) {
+            if (!inPort->IsDependent())
+                continue;
+            inPort->SetSubstitutedType(inPort->GetTentativeType());
+        }
+        for (Port* outPort : Node::GetNodeOutputs(node)) {
+            if (!outPort->IsDependent())
+                continue;
+            outPort->SetSubstitutedType(outPort->GetTentativeType());
         }
     }
 
@@ -74,36 +114,24 @@ std::vector<VCLG::Node*> VCLG::GraphValidator::BuildOrderedDependentNodeList(Gra
 
     std::vector<Node*> nodes{};
 
-    std::unordered_set<Node*> visitedNodes{};
     std::queue<Node*> nodeToVisite{};
 
     for (Node* node : graph.GetNodes()) {
-        if (node->HasFlag(Node::NodeFlag::IsOutputNode)) {
-            nodeToVisite.push(node);
-        } else {
-            bool isStub = true;
-            for (Port* output : Node::GetNodeOutputs(node)) {
-                if (connectedOutPort.count(output)) {
-                    isStub = false;
-                    break;
-                }
-            }
-            if (isStub)
-                nodeToVisite.push(node);
+        bool isStubBack = true;
+        for (Port* outPort : Node::GetNodeOutputs(node)) {
+            if (connectedOutPort.count(outPort))
+                isStubBack = false;
         }
+
+        if (isStubBack)
+            nodeToVisite.push(node);
     }
     
     while (!nodeToVisite.empty()) {
         Node* currentNode = nodeToVisite.front();
         nodeToVisite.pop();
 
-        if (visitedNodes.count(currentNode) && currentNode->HasFlag(Node::NodeFlag::IsDependent)) {
-            nodes.erase(std::remove(nodes.begin(), nodes.end(), currentNode), nodes.end());
-            nodes.push_back(currentNode);
-        } else if (currentNode->HasFlag(Node::NodeFlag::IsDependent)) {
-            nodes.push_back(currentNode);
-            visitedNodes.insert(currentNode);
-        }
+        nodes.push_back(currentNode);
 
         for (Port* inPort : Node::GetNodeInputs(currentNode)) {
             if (!inPortToOutPort.count(inPort))
@@ -114,7 +142,10 @@ std::vector<VCLG::Node*> VCLG::GraphValidator::BuildOrderedDependentNodeList(Gra
         }
     }
 
-    std::reverse(nodes.begin(), nodes.end());
+    int32_t size = (int32_t)nodes.size();
+    for (int32_t i = size - 1; i >= 0; --i)
+        nodes.push_back(nodes[i]);
+
     return std::move(nodes);
 }
 
@@ -131,7 +162,7 @@ bool VCLG::GraphValidator::SubstituteType(Node* node, VCL::Type* baseType, VCL::
                 return true;
             else if (substitutedType != nullptr)
                 return false;
-            table.SetTypeSubstitution(aliasDecl, VCL::Type::GetCanonicalType(connectedType));
+            table.SetTypeSubstitution(aliasDecl, connectedType);
             return true;
         }
         case VCL::Type::TemplateSpecializationTypeClass: {
@@ -186,4 +217,54 @@ bool VCLG::GraphValidator::SubstituteExpression(Node* node, VCL::DeclRefExpr* ba
         return false;
     table.SetScalarSubstitution(varDecl, scalar);
     return true;
+}
+
+VCL::Type* VCLG::GraphValidator::GenerateSubstitutedType(VCL::ASTContext& globalASTContext, Node* node, VCL::Type* baseType) {
+    SubstitutionTable& table = node->GetSubstitutionTable();
+    switch (baseType->GetTypeClass()) {
+        case VCL::Type::TypeAliasTypeClass: {
+            VCL::TypeAliasType* aliasType = (VCL::TypeAliasType*)baseType;
+            VCL::TypeAliasDecl* aliasDecl = aliasType->GetDecl();
+            if (!table.HasDecl(aliasDecl))
+                return baseType;
+            return table.GetTypeSubstitution(aliasDecl);
+        }
+        case VCL::Type::TemplateSpecializationTypeClass: {
+            VCL::TemplateSpecializationType* speType = (VCL::TemplateSpecializationType*)baseType;
+            VCL::TemplateArgumentList* argList = speType->GetTemplateArgumentList();
+            llvm::SmallVector<VCL::TemplateArgument> substitutedArgs{};
+            for (size_t i = 0; i < argList->GetCount(); ++i) {
+                const VCL::TemplateArgument& arg = argList->GetArgs()[i];
+                if (arg.GetKind() == VCL::TemplateArgument::Type) {
+                    VCL::Type* newType = GenerateSubstitutedType(globalASTContext, node, arg.GetType().GetType());
+                    if (!newType)
+                        return nullptr;
+                    substitutedArgs.push_back(VCL::TemplateArgument{ newType });
+                } else if (arg.GetKind() == VCL::TemplateArgument::Expression) {
+                    if (arg.GetExpr()->GetExprClass() != VCL::Expr::DeclRefExprClass) {
+                        substitutedArgs.push_back(arg);
+                        continue;
+                    }
+                    VCL::DeclRefExpr* declRefExpr = (VCL::DeclRefExpr*)arg.GetExpr();
+                    if (declRefExpr->GetValueDecl()->GetDeclClass() != VCL::Decl::VarDeclClass) {
+                        substitutedArgs.push_back(arg);
+                        continue;
+                    }
+                    VCL::VarDecl* decl = (VCL::VarDecl*)declRefExpr->GetValueDecl();
+                    if (!table.HasDecl(decl)) {
+                        substitutedArgs.push_back(arg);
+                        continue;
+                    }
+                    substitutedArgs.push_back(VCL::TemplateArgument{ *table.GetScalarSubstitution(decl) });
+                } else {
+                    substitutedArgs.push_back(arg);
+                }
+            }
+            VCL::TemplateArgumentList* substitutedArgList = 
+                VCL::TemplateArgumentList::Create(globalASTContext, substitutedArgs, argList->GetSourceRange());
+            return globalASTContext.GetTypeCache().GetOrCreateTemplateSpecializationType(speType->GetTemplateDecl(), substitutedArgList);
+        }
+        default:
+            return baseType;
+    }
 }

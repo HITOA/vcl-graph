@@ -133,6 +133,7 @@ void VCLG::GraphInstance::DestroyConnection(Identity identity) {
             break;
         }
     }
+    validator.Validate(*this);
 }
 
 bool VCLG::GraphInstance::Connect(Identity portAIdentity, Identity portBIdentity) {
@@ -225,12 +226,15 @@ bool VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* inPort) {
     Identity connectionIdentity = identityProvider.Peek();
     connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity);
     if (validator.Validate(*this)) {
-        std::cout << "Validation OK" << std::endl;
         identityProvider.Next();
         return true;
     } else {
-        std::cout << "Validation Failed" << std::endl;
-        DestroyConnection(connectionIdentity);
+        for (int i = 0; i < connections.size(); ++i) {
+            if (connections[i].GetIdentity() == connectionIdentity) {
+                connections.erase(connections.begin() + i);
+                break;
+            }
+        }
         return false;
     }
 }

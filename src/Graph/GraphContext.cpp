@@ -15,6 +15,7 @@ VCLG::GraphContext::GraphContext(std::shared_ptr<VCL::CompilerInvocation> invoca
     cc.CreateLLVMContext();
 
     definitionRegistry = llvm::makeIntrusiveRefCnt<DefinitionRegistry>(cc);
+    globalASTContext = llvm::makeIntrusiveRefCnt<VCL::ASTContext>(cc.GetTypeCache());
 }
 
 std::shared_ptr<VCLG::GraphInstance> VCLG::GraphContext::CreateInstance(
