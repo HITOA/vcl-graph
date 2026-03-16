@@ -1,6 +1,9 @@
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
 
 #include <VCLG/Graph/Port.hpp>
+#include <VCLG/Graph/Parameter.hpp>
+#include <VCLG/AST/ASTParameterWriter.hpp>
+#include <VCLG/AST/ASTAutoParameterSubstitution.hpp>
 
 #include <VCL/Core/SourceManager.hpp>
 #include <VCL/Frontend/CompilerInstance.hpp>
@@ -111,6 +114,23 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         instance->GetImportModuleTable(),
         instance->GetDefineTable() };
     VCL::Parser parser{ stream, sema, instance->GetCompilerContext().GetAttributeTable() };
+
+    ASTParameterWriter parameterWriter{ 
+        instance->GetASTContext(),
+        instance->GetCompilerContext().GetIdentifierTable(), 
+        nodeDefinition->GetParameters(), node->GetParameters() };
+
+    ASTAutoParameterSubstitution autoParameterWriter{
+        sema,
+        instance->GetCompilerContext().GetIdentifierTable(),
+        node->GetSubstitutionTable(), 
+        nodeDefinition->GetAutoParameters() };
+
+    VCL::MultiplexerASTConsumer astConsumer{};
+    astConsumer.PushConsumer(&parameterWriter);
+    astConsumer.PushConsumer(&autoParameterWriter);
+
+    parser.SetASTConsumer(&astConsumer);
     
     if (!parser.Parse())
         return false;
@@ -247,7 +267,7 @@ std::vector<VCLG::Node*> VCLG::CodeGenGraph::BuildOrderedNodeList() {
             visitedNodes.insert(currentNode);
         }
 
-        for (Port* inPort : GetNodeInputs(currentNode)) {
+        for (Port* inPort : Node::GetNodeInputs(currentNode)) {
             if (!inPortToOutPort.count(inPort))
                 continue;
             Port* connectedPort = inPortToOutPort[inPort];
@@ -258,22 +278,4 @@ std::vector<VCLG::Node*> VCLG::CodeGenGraph::BuildOrderedNodeList() {
 
     std::reverse(nodes.begin(), nodes.end());
     return std::move(nodes);
-}
-
-llvm::ArrayRef<VCLG::Port*> VCLG::CodeGenGraph::GetNodeInputs(Node* node) {
-    switch (node->GetNodeClass()) {
-        case Node::SourceNodeClass:
-            return ((SourceNode*)node)->GetInputs();
-        default:
-            return {};
-    }
-}
-
-llvm::ArrayRef<VCLG::Port*> VCLG::CodeGenGraph::GetNodeOutputs(Node* node) {
-    switch (node->GetNodeClass()) {
-        case Node::SourceNodeClass:
-            return ((SourceNode*)node)->GetOutputs();
-        default:
-            return {};
-    }
 }

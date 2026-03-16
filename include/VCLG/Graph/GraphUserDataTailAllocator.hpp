@@ -6,6 +6,7 @@
 namespace VCLG {
     class Node;
     class Port;
+    class Parameter;
 
     class GraphUserDataTailAllocator {
     public:
@@ -16,6 +17,10 @@ namespace VCLG {
         virtual void ConstructPortUserData(Port* port, void* ptr) const {}
         virtual void DestroyPortUserData(Port* port, void* ptr) const {}
         virtual size_t GetPortUserDataAdditionalSize() const { return 0; }
+
+        virtual void ConstructParameterUserData(Parameter* parameter, void* ptr) const {}
+        virtual void DestroyParameterUserData(Parameter* parameter, void* ptr) const {}
+        virtual size_t GetParameterUserDataAdditionalSize() const { return 0; }
     };
 
 }

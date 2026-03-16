@@ -18,9 +18,10 @@ namespace VCLG {
         };
     public:
         Port() = delete;
-        Port(Identity owner, VCL::Type* type, const std::string& displayName, PortKind kind, VCL::ConstantValue* initializer, Identity identity) :
-                owner{ owner }, type{ type }, displayName{ displayName }, kind{ kind }, 
-                initializer{ initializer }, initializerOverride{ nullptr }, identity{ identity } {}
+        Port(Identity owner, VCL::Type* type, const std::string& displayName, PortKind kind, VCL::ConstantValue* initializer, 
+                bool isDependent, Identity identity) :
+                owner{ owner }, type{ type }, substitutedType{ nullptr }, displayName{ displayName }, kind{ kind }, 
+                initializer{ initializer }, initializerOverride{ nullptr }, isDependent{ isDependent }, identity{ identity } {}
         Port(const Port& other) = delete;
         Port(Port&& other) = delete;
         virtual ~Port() = default;
@@ -32,20 +33,24 @@ namespace VCLG {
 
         inline Identity GetOwner() const { return owner; }
         inline VCL::Type* GetType() const { return type; }
-        inline bool IsDependent() const { return type->IsDependent(); }
+        inline VCL::Type* GetSubstitutedType() const { return substitutedType; }
+        inline VCL::Type* GetLastType() const { return substitutedType ? substitutedType : type; }
         inline const std::string& GetDisplayName() const { return displayName; }
         inline PortKind GetKind() const { return kind; }
         inline VCL::ConstantValue* GetInitializer() const { return initializer; }
         inline VCL::ConstantValue* GetInitializerOverride() const { return initializerOverride; }
+        inline bool IsDependent() const { return isDependent; }
         inline Identity GetIdentity() const { return identity; }
 
     private:
         Identity owner;
         VCL::Type* type;
+        VCL::Type* substitutedType;
         std::string displayName;
         PortKind kind;
         VCL::ConstantValue* initializer;
         VCL::ConstantValue* initializerOverride;
+        bool isDependent;
         Identity identity;
     };
 

@@ -7,6 +7,12 @@
 #include <VCLG/Graph/Node.hpp>
 #include <VCLG/Graph/Connection.hpp>
 #include <VCLG/Graph/GraphUserDataTailAllocator.hpp>
+#include <VCLG/Graph/GraphValidator.hpp>
+
+#include <VCL/AST/Template.hpp>
+#include <VCL/Frontend/CompilerInstance.hpp>
+
+#include <llvm/ADT/DenseMap.h>
 
 #include <vector>
 #include <memory>
@@ -27,6 +33,9 @@ namespace VCLG {
 
         GraphInstance& operator=(const GraphInstance& other) = delete;
         GraphInstance& operator=(GraphInstance&& other) = delete;
+
+        inline GraphContext& GetGraphContext() { return graphContext; }
+        inline GraphValidator& GetGraphValidator() { return validator; }
 
         inline llvm::ArrayRef<Node*> GetNodes() const { return storage.GetNodes(); }
         inline llvm::ArrayRef<Connection> GetConnections() const { return connections; }
@@ -54,6 +63,8 @@ namespace VCLG {
 
     private:
         GraphContext& graphContext;
+
+        GraphValidator validator;
 
         std::unique_ptr<Allocator> allocator;
         IdentityProvider identityProvider;

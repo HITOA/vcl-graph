@@ -37,9 +37,6 @@ namespace VCLG {
         void BuildPortMap();
         std::vector<Node*> BuildOrderedNodeList();
 
-        llvm::ArrayRef<Port*> GetNodeInputs(Node* node);
-        llvm::ArrayRef<Port*> GetNodeOutputs(Node* node);
-
     private:
         std::unique_ptr<CodeGenEntrypoint> entrypoint;
         GraphContext& graphContext;
