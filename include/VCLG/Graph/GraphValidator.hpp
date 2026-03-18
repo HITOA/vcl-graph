@@ -45,6 +45,7 @@ namespace VCLG {
         bool SubstituteExpression(Node* node, VCL::DeclRefExpr* baseExpr, VCL::ConstantScalar* scalar);
 
         VCL::Type* GenerateSubstitutedType(VCL::ASTContext& globalASTContext, Node* node, VCL::Type* baseType);
+        std::optional<uint64_t> GetConstantScalarDataFromTemplateArgument(const VCL::TemplateArgument& arg);
 
     private:
         llvm::BumpPtrAllocator allocator{};

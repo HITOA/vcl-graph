@@ -158,7 +158,7 @@ bool VCLG::GraphValidator::SubstituteType(Node* node, VCL::Type* baseType, VCL::
             if (!table.HasDecl(aliasDecl))
                 return true;
             VCL::Type* substitutedType = table.GetTypeSubstitution(aliasDecl);
-            if (substitutedType != nullptr && VCL::Type::IsCanonicallyEqual(substitutedType, connectedType))
+            if (substitutedType != nullptr && SubstituteType(node, substitutedType, connectedType))
                 return true;
             else if (substitutedType != nullptr)
                 return false;
@@ -180,9 +180,8 @@ bool VCLG::GraphValidator::SubstituteType(Node* node, VCL::Type* baseType, VCL::
                 if (arg.GetKind() == VCL::TemplateArgument::Type) {
                     if (!SubstituteType(node, arg.GetType().GetType(), argConnected.GetType().GetType()))
                         return false;
-                } else if (arg.GetKind() == VCL::TemplateArgument::Expression) {
-                    if (arg.GetExpr()->GetExprClass() != VCL::Expr::DeclRefExprClass)
-                        continue;
+                } else if (arg.GetKind() == VCL::TemplateArgument::Expression 
+                        && arg.GetExpr()->GetExprClass() == VCL::Expr::DeclRefExprClass) {
                     VCL::DeclRefExpr* declRefExpr = (VCL::DeclRefExpr*)arg.GetExpr();
                     VCL::ConstantScalar* scalar = nullptr;
                     if (argConnected.GetKind() == VCL::TemplateArgument::Integral) {
@@ -194,6 +193,12 @@ bool VCLG::GraphValidator::SubstituteType(Node* node, VCL::Type* baseType, VCL::
                     }
                     if (!SubstituteExpression(node, declRefExpr, scalar))
                         return false;
+                } else {
+                    std::optional<uint64_t> s1 = GetConstantScalarDataFromTemplateArgument(arg);
+                    std::optional<uint64_t> s2 = GetConstantScalarDataFromTemplateArgument(argConnected);
+                    if (!s1.has_value() || !s2.has_value())
+                        return false;
+                    return s1.value() == s2.value();
                 }
             }
             return true;
@@ -208,8 +213,13 @@ bool VCLG::GraphValidator::SubstituteExpression(Node* node, VCL::DeclRefExpr* ba
     if (baseExpr->GetValueDecl()->GetDeclClass() != VCL::Decl::VarDeclClass)
         return true;
     VCL::VarDecl* varDecl = (VCL::VarDecl*)baseExpr->GetValueDecl();
-    if (!table.HasDecl(varDecl))
-        return true;
+    if (!table.HasDecl(varDecl)) {
+        if (baseExpr->GetConstantValue() == nullptr 
+                || baseExpr->GetConstantValue()->GetConstantValueClass() != VCL::ConstantValue::ConstantScalarClass) {
+            return false;
+        }
+        return memcmp(scalar->Data(), ((VCL::ConstantScalar*)baseExpr->GetConstantValue())->Data(), sizeof(uint8_t) * 8) == 0;
+    }
     VCL::ConstantScalar* substitutedScalar = table.GetScalarSubstitution(varDecl);
     if (substitutedScalar != nullptr && memcmp(substitutedScalar->Data(), scalar->Data(), sizeof(uint8_t) * 8) == 0)
         return true;
@@ -266,5 +276,21 @@ VCL::Type* VCLG::GraphValidator::GenerateSubstitutedType(VCL::ASTContext& global
         }
         default:
             return baseType;
+    }
+}
+
+std::optional<uint64_t> VCLG::GraphValidator::GetConstantScalarDataFromTemplateArgument(const VCL::TemplateArgument& arg) {
+    switch (arg.GetKind()) {
+        case VCL::TemplateArgument::Expression: {
+            if (arg.GetExpr()->GetConstantValue() == nullptr)
+                return {};
+            if (arg.GetExpr()->GetConstantValue()->GetConstantValueClass() != VCL::ConstantValue::ConstantScalarClass)
+                return {};
+            return ((VCL::ConstantScalar*)arg.GetExpr()->GetConstantValue())->Get<uint64_t>();
+        }
+        case VCL::TemplateArgument::Integral:
+            return arg.GetIntegral().Get<uint64_t>();
+        default:
+            return {};
     }
 }

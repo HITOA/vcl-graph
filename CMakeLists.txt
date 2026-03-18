@@ -16,7 +16,10 @@ file(GLOB_RECURSE vclg_source_files "src/*.*")
 add_library(vclg STATIC ${vclg_source_files})
 target_include_directories(vclg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-set_property(TARGET vclg PROPERTY COMPILE_WARNING_AS_ERROR ON)
+
+if(CMAKE_BUILD_TYPE EQUAL "Release")
+    set_property(TARGET vclg PROPERTY COMPILE_WARNING_AS_ERROR ON)
+endif()
 
 target_link_libraries(vclg PUBLIC vcl tlsf)
 
