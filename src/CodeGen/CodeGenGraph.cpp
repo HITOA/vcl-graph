@@ -36,8 +36,8 @@ VCLG::CodeGenGraph::CodeGenGraph(GraphContext& graphContext, GraphInstance& grap
     cc.CopyAttributeTable(graphContext.GetCompilerContext());
     cc.CopyDirectiveRegistry(graphContext.GetCompilerContext());
     cc.CopyTarget(graphContext.GetCompilerContext());
-    cc.CreateTypeCache();
-    cc.CreateModuleCache();
+    cc.CopyTypeCache(graphContext.GetCompilerContext());
+    cc.CopyModuleCache(graphContext.GetCompilerContext());
     cc.CreateLLVMContext();
 }
 
