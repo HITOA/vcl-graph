@@ -95,9 +95,9 @@ namespace VCLG {
     public:
         SourceNodeDefinition() = delete;
         SourceNodeDefinition(std::shared_ptr<VCL::CompilerInstance> instance, const std::string& displayName, VCL::FunctionDecl* entrypoint, 
-            bool hasInstanceData, llvm::ArrayRef<SourcePortDefinition*> ports, llvm::ArrayRef<SourceParameterDefinition*> parameters,
+            VCL::FunctionDecl* reset, bool hasInstanceData, llvm::ArrayRef<SourcePortDefinition*> ports, llvm::ArrayRef<SourceParameterDefinition*> parameters,
             llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters) 
-                : instance{ instance }, displayName{ displayName }, entrypoint{ entrypoint }, hasInstanceData{ hasInstanceData }, 
+                : instance{ instance }, displayName{ displayName }, entrypoint{ entrypoint }, reset{ reset }, hasInstanceData{ hasInstanceData }, 
                     portCount{ ports.size() }, parameterCount{ parameters.size() }, autoParameterCount{ autoParameters.size() } {
             std::uninitialized_copy(ports.begin(), ports.end(), getTrailingObjects<SourcePortDefinition*>());
             std::uninitialized_copy(parameters.begin(), parameters.end(), getTrailingObjects<SourceParameterDefinition*>());
@@ -113,6 +113,7 @@ namespace VCLG {
         inline llvm::StringRef GetDisplayName() const { return displayName; }
 
         inline VCL::FunctionDecl* GetEntrypoint() const { return entrypoint; }
+        inline VCL::FunctionDecl* GetReset() const { return reset; }
 
         inline llvm::ArrayRef<SourcePortDefinition*> GetPorts() const { 
             return { getTrailingObjects<SourcePortDefinition*>(), portCount }; }
@@ -142,6 +143,7 @@ namespace VCLG {
         std::string displayName;
         DefinitionNodeFlag flags;
         VCL::FunctionDecl* entrypoint;
+        VCL::FunctionDecl* reset;
         bool hasInstanceData;
         size_t portCount;
         size_t parameterCount;
@@ -184,6 +186,7 @@ namespace VCLG {
         llvm::StringMap<SourceNodeDefinition*> definitions;
 
         VCL::AttributeDefinition* nodeProcessAttributeDefinition;
+        VCL::AttributeDefinition* nodeResetAttributeDefinition;
         VCL::AttributeDefinition* inputAttributeDefinition;
         VCL::AttributeDefinition* outputAttributeDefinition;
         VCL::AttributeDefinition* parameterAttributeDefinition;

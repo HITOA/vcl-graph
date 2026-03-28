@@ -39,6 +39,7 @@ namespace VCLG {
 
     private:
         std::unique_ptr<CodeGenEntrypoint> entrypoint;
+        std::unique_ptr<CodeGenEntrypoint> reset;
         GraphContext& graphContext;
         GraphInstance& graph;
         llvm::Module& module;

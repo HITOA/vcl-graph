@@ -20,7 +20,8 @@ namespace VCLG {
         Port() = delete;
         Port(Identity owner, VCL::Type* type, const std::string& displayName, PortKind kind, VCL::ConstantValue* initializer, 
                 bool isDependent, Identity identity) :
-                owner{ owner }, type{ type }, substitutedType{ nullptr }, tentativeType{ nullptr }, displayName{ displayName }, kind{ kind }, 
+                owner{ owner }, type{ type }, substitutedType{ nullptr }, tentativeType{ nullptr }, overrideType{ nullptr }, 
+                displayName{ displayName }, kind{ kind }, 
                 initializer{ initializer }, initializerOverride{ nullptr }, isDependent{ isDependent }, identity{ identity } {}
         Port(const Port& other) = delete;
         Port(Port&& other) = delete;
@@ -37,6 +38,8 @@ namespace VCLG {
         inline void SetSubstitutedType(VCL::Type* type) { substitutedType = type; }
         inline VCL::Type* GetTentativeType() const { return tentativeType; }
         inline void SetTentativeType(VCL::Type* type) { tentativeType = type; }
+        inline VCL::Type* GetOverrideType() const { return overrideType; }
+        inline void SetOverrideType(VCL::Type* type) { overrideType = type; }
         inline VCL::Type* GetLastType() const { return substitutedType ? substitutedType : type; }
         inline VCL::Type* GetLastTentativeType() const { return tentativeType ? tentativeType : type; }
         inline const std::string& GetDisplayName() const { return displayName; }
@@ -51,6 +54,7 @@ namespace VCLG {
         VCL::Type* type;
         VCL::Type* substitutedType;
         VCL::Type* tentativeType;
+        VCL::Type* overrideType;
         std::string displayName;
         PortKind kind;
         VCL::ConstantValue* initializer;

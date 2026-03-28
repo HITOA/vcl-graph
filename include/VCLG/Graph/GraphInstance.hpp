@@ -43,6 +43,8 @@ namespace VCLG {
         inline Node* GetNodeByIdentity(Identity identity) const { return storage.GetNodeByIdentity(identity); }
         inline Port* GetPortByIdentity(Identity identity) const { return storage.GetPortByIdentity(identity); }
 
+        Connection* FindConnectionByPort(Port* outPort, Port* inPort);
+
         SourceNode* InstantiateSourceNode(VCL::Source* source);
         
         void DestroyNode(Node* node);

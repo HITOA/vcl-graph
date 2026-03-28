@@ -11,13 +11,15 @@ namespace VCLG {
     class CodeGenEntrypoint {
     public:
         CodeGenEntrypoint() = delete;
-        CodeGenEntrypoint(CodeGenGraph& cgg);
+        CodeGenEntrypoint(CodeGenGraph& cgg, llvm::StringRef name);
         CodeGenEntrypoint(const CodeGenEntrypoint& other) = delete;
         CodeGenEntrypoint(CodeGenEntrypoint&& other) = delete;
         ~CodeGenEntrypoint() = default;
 
         CodeGenEntrypoint& operator=(const CodeGenEntrypoint& other) = delete;
         CodeGenEntrypoint& operator=(CodeGenEntrypoint&& other) = delete;
+
+        inline llvm::IRBuilder<>& GetIRBuilder() { return builder; }
 
         void Begin();
         void End();
@@ -26,7 +28,8 @@ namespace VCLG {
 
     private:
         CodeGenGraph& cgg;
-
+        llvm::StringRef name;
+        
         llvm::Function* function;
         llvm::IRBuilder<> builder;
     };

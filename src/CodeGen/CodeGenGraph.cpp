@@ -4,6 +4,7 @@
 #include <VCLG/Graph/Parameter.hpp>
 #include <VCLG/AST/ASTParameterWriter.hpp>
 #include <VCLG/AST/ASTAutoParameterSubstitution.hpp>
+#include <VCLG/AST/ASTPortTypeOverrideWriter.hpp>
 
 #include <VCL/Core/SourceManager.hpp>
 #include <VCL/Frontend/CompilerInstance.hpp>
@@ -67,8 +68,10 @@ bool VCLG::CodeGenGraph::LinkNow() {
 }
 
 bool VCLG::CodeGenGraph::Emit() {
-    entrypoint = std::make_unique<CodeGenEntrypoint>(*this);
+    entrypoint = std::make_unique<CodeGenEntrypoint>(*this, "Main");
+    reset = std::make_unique<CodeGenEntrypoint>(*this, "Reset");
     entrypoint->Begin();
+    reset->Begin();
 
     BuildPortMap();
     std::vector<Node*> nodes = BuildOrderedNodeList();
@@ -84,6 +87,7 @@ bool VCLG::CodeGenGraph::Emit() {
         }
     }
 
+    reset->End();
     entrypoint->End();
     return true;
 }
@@ -126,9 +130,15 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         node->GetSubstitutionTable(), 
         nodeDefinition->GetAutoParameters() };
 
+    ASTPortTypeOverrideWriter portWriter{ 
+        instance->GetASTContext(),
+        instance->GetCompilerContext().GetIdentifierTable(), 
+        nodeDefinition->GetPorts(), node->GetInputs() };
+
     VCL::MultiplexerASTConsumer astConsumer{};
     astConsumer.PushConsumer(&parameterWriter);
     astConsumer.PushConsumer(&autoParameterWriter);
+    astConsumer.PushConsumer(&portWriter);
 
     parser.SetASTConsumer(&astConsumer);
     
@@ -188,10 +198,23 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
                 .Report();
             return false;
         }
-        
-        variable->setInitializer(connectedVariable->getInitializer());
-        variable->replaceAllUsesWith(connectedVariable);
-        variable->eraseFromParent();
+
+        Connection* conn = graph.FindConnectionByPort(connectedPort, inPort);
+        if (!conn) {
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+                .SetCompilerInfo(__FILE__, __func__, __LINE__)
+                .Report();
+            return false;
+        }
+
+        if (conn->GetConverter() == nullptr) {
+            variable->setInitializer(connectedVariable->getInitializer());
+            variable->replaceAllUsesWith(connectedVariable);
+            variable->eraseFromParent();
+        } else {
+            if (!conn->GetConverter()->Emit(entrypoint->GetIRBuilder(), connectedPort, inPort, connectedVariable, variable))
+                return false;
+        }
     }
 
     for (size_t i = 0; i < node->GetOutputs().size(); ++i) {
@@ -230,6 +253,27 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
             .Report();
         return false;
     }
+
+    if (nodeDefinition->GetReset() != nullptr) {
+        std::optional<std::string> mangledResetEntrypointName = instance->GetMangledSymbolName(nodeDefinition->GetReset()->GetIdentifierInfo()->GetName());
+        if (!mangledResetEntrypointName.has_value()) {
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+                .SetCompilerInfo(__FILE__, __func__, __LINE__)
+                .Report();
+            return false;
+        }
+        llvm::Function* resetFunction = module.getFunction(mangledResetEntrypointName.value());
+        if (!resetFunction) {
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+                .SetCompilerInfo(__FILE__, __func__, __LINE__)
+                .Report();
+            return false;
+        }
+
+        if (!reset->AddNodeEntrypoint(resetFunction))
+            return false;
+    }
+
     return entrypoint->AddNodeEntrypoint(processFunction);
 }
 

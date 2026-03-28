@@ -23,6 +23,17 @@ VCLG::GraphInstance::~GraphInstance() {
     Reset();
 }
 
+VCLG::Connection* VCLG::GraphInstance::FindConnectionByPort(Port* outPort, Port* inPort) {
+    for (int i = 0; i < connections.size(); ++i) {
+        Connection& conn = connections[i];
+        Port* currentInPort = GetPortByIdentity(conn.GetInputPortIdentity());
+        Port* currentOutPort = GetPortByIdentity(conn.GetOutputPortIdentity());
+        if (outPort == currentOutPort && inPort == currentInPort)
+            return &conn;
+    }
+    return nullptr;
+}
+
 VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source) {
     SourceNodeDefinition* definition = graphContext.GetDefinitionRegistry().GetOrCreateSourceNodeDefinition(source);
     if (!definition)
@@ -129,6 +140,11 @@ void VCLG::GraphInstance::DestroyNode(Node* node) {
 void VCLG::GraphInstance::DestroyConnection(Identity identity) {
     for (int i = 0; i < connections.size(); ++i) {
         if (connections[i].GetIdentity() == identity) {
+            Connection& conn = connections[i];
+            Port* inPort = GetPortByIdentity(conn.GetInputPortIdentity());
+            Port* outPort = GetPortByIdentity(conn.GetOutputPortIdentity());
+            if (conn.GetConverter() != nullptr)
+                conn.GetConverter()->OnLinkDestroyed(outPort, inPort);
             connections.erase(connections.begin() + i);
             break;
         }
@@ -167,7 +183,7 @@ void VCLG::GraphInstance::DestroyNodeConnections(Node* node) {
         Port* inPort = GetPortByIdentity(conn.GetInputPortIdentity());
         Port* outPort = GetPortByIdentity(conn.GetOutputPortIdentity());
         if (inPort->GetOwner() == node->GetIdentity() || outPort->GetOwner() == node->GetIdentity()) {
-            connections.erase(connections.begin() + i);
+            DestroyConnection(conn.GetIdentity());
         } else {
             ++i;
         }
@@ -223,20 +239,37 @@ bool VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* inPort) {
     VCL::Type* outType = outPort->GetLastType();
     VCL::Type* inType = inPort->GetLastType();
 
-    Identity connectionIdentity = identityProvider.Peek();
-    connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity);
-    if (validator.Validate(*this)) {
-        identityProvider.Next();
+    if (outPort->IsDependent() || inPort->IsDependent()) {
+        Identity connectionIdentity = identityProvider.Peek();
+        connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, nullptr);
+        if (validator.Validate(*this)) {
+            identityProvider.Next();
+            return true;
+        } else {
+            for (int i = 0; i < connections.size(); ++i) {
+                if (connections[i].GetIdentity() == connectionIdentity) {
+                    connections.erase(connections.begin() + i);
+                    break;
+                }
+            }
+            return false;
+        }
+    } else if (VCL::Type::IsCanonicallyEqual(outType, inType)) {
+        Identity connectionIdentity = identityProvider.Next();
+        connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, nullptr);
         return true;
     } else {
-        for (int i = 0; i < connections.size(); ++i) {
-            if (connections[i].GetIdentity() == connectionIdentity) {
-                connections.erase(connections.begin() + i);
-                break;
+        for (Converter* converter : graphContext.GetConverters()) {
+            if (converter->Convertible(outPort, inPort)) {
+                Identity connectionIdentity = identityProvider.Next();
+                connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, converter);
+                converter->OnLinkCreated(outPort, inPort);
+                return true;
             }
         }
-        return false;
     }
+
+    return false;
 }
 
 bool VCLG::GraphInstance::HasConnection(Port* outPort, Port* inPort) {

@@ -1,8 +1,9 @@
 #pragma once
 
+#include <VCLG/Core/Allocator.hpp>
 #include <VCLG/Graph/Definition.hpp>
 #include <VCLG/Graph/GraphUserDataTailAllocator.hpp>
-#include <VCLG/Core/Allocator.hpp>
+#include <VCLG/Graph/Converter.hpp>
 
 #include <VCL/Frontend/CompilerContext.hpp>
 
@@ -28,6 +29,9 @@ namespace VCLG {
         inline VCL::CompilerContext& GetCompilerContext() { return cc; }
         inline VCLG::DefinitionRegistry& GetDefinitionRegistry() { return *definitionRegistry; }
         inline VCL::ASTContext& GetGlobalASTContext() { return *globalASTContext; }
+        inline std::vector<Converter*>& GetConverters() { return converters; }
+
+        void AddConverter(Converter* converter);
 
         std::shared_ptr<GraphInstance> CreateInstance(
             std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTailAllocator>(),
@@ -38,6 +42,8 @@ namespace VCLG {
         llvm::IntrusiveRefCntPtr<VCLG::DefinitionRegistry> definitionRegistry;
 
         llvm::IntrusiveRefCntPtr<VCL::ASTContext> globalASTContext;
+
+        std::vector<Converter*> converters;
     };
 
 }

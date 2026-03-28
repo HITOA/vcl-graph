@@ -3,7 +3,7 @@
 #include <VCLG/Graph/GraphInstance.hpp>
 
 
-VCLG::GraphContext::GraphContext(std::shared_ptr<VCL::CompilerInvocation> invocation) : cc{ invocation } {
+VCLG::GraphContext::GraphContext(std::shared_ptr<VCL::CompilerInvocation> invocation) : cc{ invocation }, converters{} {
     cc.CreateDiagnosticEngine();
     cc.CreateSourceManager();
     cc.CreateIdentifierTable();
@@ -16,6 +16,11 @@ VCLG::GraphContext::GraphContext(std::shared_ptr<VCL::CompilerInvocation> invoca
 
     definitionRegistry = llvm::makeIntrusiveRefCnt<DefinitionRegistry>(cc);
     globalASTContext = llvm::makeIntrusiveRefCnt<VCL::ASTContext>(cc.GetTypeCache());
+}
+
+void VCLG::GraphContext::AddConverter(Converter* converter) {
+    converters.push_back(converter);
+    converter->SetGraphContext(this);
 }
 
 std::shared_ptr<VCLG::GraphInstance> VCLG::GraphContext::CreateInstance(

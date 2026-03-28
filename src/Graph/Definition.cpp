@@ -19,6 +19,7 @@ VCLG::DefinitionRegistry::DefinitionRegistry(VCL::CompilerContext& cc, std::uniq
         cc{ cc }, allocator{ std::move(allocator) }, definitions{} {
     
     nodeProcessAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("NodeProcess"), 0, 0);
+    nodeResetAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("NodeReset"), 0, 0);
     inputAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Input"), 1, 1);
     outputAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Output"), 1, 1);
     parameterAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Parameter"), 1, 1);
@@ -74,6 +75,7 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
     llvm::SmallVector<SourceAutoParameterDefinition*> autoParameters{};
     bool hasInstanceData = false;
     VCL::FunctionDecl* entrypoint = nullptr;
+    VCL::FunctionDecl* reset = nullptr;
 
     for (auto it = tu->Begin(); it != tu->End(); ++it) {
         switch (it->GetDeclClass()) {
@@ -111,6 +113,14 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
                         return nullptr;
                     }
                     entrypoint = decl;
+                } else if (decl->HasAttribute(nodeResetAttributeDefinition) != nullptr) {
+                    if (reset != nullptr) {
+                        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+                            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+                            .Report();
+                        return nullptr;
+                    }
+                    reset = decl;
                 }
                 break;
             }
@@ -131,7 +141,7 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
     size_t portDefSize = SourceNodeDefinition::totalSizeToAlloc<
         SourcePortDefinition*, SourceParameterDefinition*, SourceAutoParameterDefinition*>(ports.size(), parameters.size(), autoParameters.size());
     SourceNodeDefinition* definition = (SourceNodeDefinition*)allocator->Allocate(portDefSize, 4);
-    new (definition) SourceNodeDefinition{ instance, displayName, entrypoint, hasInstanceData, ports, parameters, autoParameters };
+    new (definition) SourceNodeDefinition{ instance, displayName, entrypoint, reset, hasInstanceData, ports, parameters, autoParameters };
     definitions.insert({ source->GetBufferIdentifier(), definition });
 
     if (HasFlagDefined(instance, "IS_GRAPH_INPUT"))

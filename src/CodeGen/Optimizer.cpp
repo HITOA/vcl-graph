@@ -3,6 +3,7 @@
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
 
 #include <llvm/Passes/PassBuilder.h>
+#include <llvm/Transforms/IPO/Internalize.h>
 
 
 bool VCLG::Optimizer::Optimize(CodeGenGraph& cgg) {
@@ -20,7 +21,11 @@ bool VCLG::Optimizer::Optimize(CodeGenGraph& cgg) {
 
     pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    llvm::ModulePassManager mpm{};
+    mpm.addPass(llvm::InternalizePass{[](const llvm::GlobalValue& gv) {
+        return gv.getLinkage() == llvm::GlobalValue::LinkageTypes::ExternalLinkage;
+    }});
+    mpm.addPass(pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3));
 
     if (!cgg.LinkNow())
         return false;
