@@ -10,26 +10,10 @@ VCLG::SubstitutionTable::SubstitutionTable() : table{} {
 
 void VCLG::SubstitutionTable::SetTypeSubstitution(VCL::TypeAliasDecl* decl, VCL::Type* type) {
     table[decl] = type;
-    if (type != nullptr) {
-        std::cout << "Substituting " << decl->GetIdentifierInfo()->GetName().str() << " for " << VCL::TypePrinter::Print(type) << std::endl;
-    }
 }
 
 void VCLG::SubstitutionTable::SetScalarSubstitution(VCL::VarDecl* decl, VCL::ConstantScalar* value) {
     table[decl] = value;
-    if (value != nullptr) {
-        switch (value->GetKind()) {
-            case VCL::BuiltinType::Float32:
-                std::cout << "Substituting " << decl->GetIdentifierInfo()->GetName().str() << " for " << value->Get<float>() << std::endl;
-                break;
-            case VCL::BuiltinType::Float64:
-                std::cout << "Substituting " << decl->GetIdentifierInfo()->GetName().str() << " for " << value->Get<double>() << std::endl;
-                break;
-            default:
-                std::cout << "Substituting " << decl->GetIdentifierInfo()->GetName().str() << " for " << *(long*)value->Data() << std::endl;
-                break;
-        }
-    }
 }
 
 VCL::Type* VCLG::SubstitutionTable::GetTypeSubstitution(VCL::TypeAliasDecl* decl) {

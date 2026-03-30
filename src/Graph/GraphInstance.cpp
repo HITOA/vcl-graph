@@ -239,7 +239,18 @@ bool VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* inPort) {
     VCL::Type* outType = outPort->GetLastType();
     VCL::Type* inType = inPort->GetLastType();
 
-    if (outPort->IsDependent() || inPort->IsDependent()) {
+    if ((!outPort->IsDependent() && inPort->IsDependent()) 
+        || (outPort->IsDependent() && !inPort->IsDependent())
+        || (!outPort->IsDependent() && !inPort->IsDependent())) {
+        for (Converter* converter : graphContext.GetConverters()) {
+            if (converter->Convertible(outPort, inPort)) {
+                Identity connectionIdentity = identityProvider.Next();
+                connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, converter);
+                converter->OnLinkCreated(outPort, inPort);
+                return true;
+            }
+        }
+    } if (outPort->IsDependent() || inPort->IsDependent()) {
         Identity connectionIdentity = identityProvider.Peek();
         connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, nullptr);
         if (validator.Validate(*this)) {
@@ -258,15 +269,6 @@ bool VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* inPort) {
         Identity connectionIdentity = identityProvider.Next();
         connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, nullptr);
         return true;
-    } else {
-        for (Converter* converter : graphContext.GetConverters()) {
-            if (converter->Convertible(outPort, inPort)) {
-                Identity connectionIdentity = identityProvider.Next();
-                connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, converter);
-                converter->OnLinkCreated(outPort, inPort);
-                return true;
-            }
-        }
     }
 
     return false;
