@@ -40,6 +40,8 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
         for (Port* inPort : Node::GetNodeInputs(node)) {
             if (inPortToOutPort.count(inPort)) {
                 Port* outPort = inPortToOutPort[inPort];
+                if (graph.FindConnectionByPort(outPort, inPort)->GetConverter() != nullptr)
+                    continue;
                 if (!inPort->IsDependent() && !outPort->IsDependent())
                     continue;
                 if (outPort->IsDependent() && outPort->GetTentativeType() == nullptr)
@@ -51,6 +53,8 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
         for (Port* outPort : Node::GetNodeOutputs(node)) {
             if (connectedOutPort.count(outPort)) {
                 for (const Connection& connection : graph.GetConnections()) {
+                    if (connection.GetConverter() != nullptr)
+                        continue;
                     Port* inPort = graph.GetPortByIdentity(connection.GetInputPortIdentity());
                     if (!inPort->IsDependent() && !outPort->IsDependent())
                         continue;
