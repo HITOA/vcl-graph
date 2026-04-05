@@ -140,7 +140,7 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
 
     size_t portDefSize = SourceNodeDefinition::totalSizeToAlloc<
         SourcePortDefinition*, SourceParameterDefinition*, SourceAutoParameterDefinition*>(ports.size(), parameters.size(), autoParameters.size());
-    SourceNodeDefinition* definition = (SourceNodeDefinition*)allocator->Allocate(portDefSize, 4);
+    SourceNodeDefinition* definition = (SourceNodeDefinition*)allocator->Allocate(portDefSize, 8);
     new (definition) SourceNodeDefinition{ instance, displayName, entrypoint, reset, hasInstanceData, ports, parameters, autoParameters };
     definitions.insert({ source->GetBufferIdentifier(), definition });
 
@@ -169,7 +169,7 @@ VCLG::SourcePortDefinition* VCLG::DefinitionRegistry::CreateSourcePortDefinition
     VCL::Type* type = varDecl->GetValueType().GetType();
     bool isDependent = IsPortAutoParameterDependent(type, autoParameters);
 
-    SourcePortDefinition* definition = (SourcePortDefinition*)allocator->Allocate(sizeof(SourcePortDefinition), 4);
+    SourcePortDefinition* definition = (SourcePortDefinition*)allocator->Allocate(sizeof(SourcePortDefinition), 8);
     new (definition) SourcePortDefinition{ name, displayName, isInput, varDecl, isDependent};
     return definition;
 }
@@ -182,14 +182,14 @@ VCLG::SourceParameterDefinition* VCLG::DefinitionRegistry::CreateSourceParameter
         displayName = GetStringAttribute(attribute);
     }
 
-    SourceParameterDefinition* definition = (SourceParameterDefinition*)allocator->Allocate(sizeof(SourceParameterDefinition), 4);
+    SourceParameterDefinition* definition = (SourceParameterDefinition*)allocator->Allocate(sizeof(SourceParameterDefinition), 8);
     new (definition) SourceParameterDefinition{ name, displayName, varDecl };
     return definition;
 }
 
 VCLG::SourceAutoParameterDefinition* VCLG::DefinitionRegistry::CreateSourceAutoParameterDefinition(VCL::NamedDecl* decl) {
     std::string name = decl->GetIdentifierInfo()->GetName().str();
-    SourceAutoParameterDefinition* definition = (SourceAutoParameterDefinition*)allocator->Allocate(sizeof(SourceAutoParameterDefinition), 4);
+    SourceAutoParameterDefinition* definition = (SourceAutoParameterDefinition*)allocator->Allocate(sizeof(SourceAutoParameterDefinition), 8);
     new (definition) SourceAutoParameterDefinition{ name, decl };
     return definition;
 }

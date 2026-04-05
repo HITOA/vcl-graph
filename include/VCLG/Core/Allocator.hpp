@@ -27,6 +27,8 @@ namespace VCLG {
 
         void Reset() override;
 
+        void Check();
+
     private:
         void CreatePool(size_t poolSize);
         void DestroyPool(size_t poolIdx);
