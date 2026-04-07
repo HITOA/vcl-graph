@@ -9,11 +9,13 @@
 
 #include <string>
 #include <cstdint>
+#include <memory>
 
 
 namespace VCLG {
     class Port;
     class Parameter;
+    class GraphInstance;
 
     class Node {
     public:
@@ -83,7 +85,8 @@ namespace VCLG {
     };
 
     class SubGraphNode : public Node {
-
+    private:
+        std::shared_ptr<GraphInstance> graph;
     };
 
     class TransientNode : public Node {

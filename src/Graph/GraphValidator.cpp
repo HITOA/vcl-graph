@@ -93,6 +93,16 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
         }
     }
 
+    for (const Connection& conn : graph.GetConnections()) {
+        if (conn.GetConverter() == nullptr)
+            continue;
+        Port* outPort = graph.GetPortByIdentity(conn.GetOutputPortIdentity());
+        Port* inPort = graph.GetPortByIdentity(conn.GetInputPortIdentity());
+        if (!conn.GetConverter()->Convertible(outPort, inPort))
+            return false;
+        conn.GetConverter()->OnLinkCreated(outPort, inPort);
+    }
+
     return true;
 }
 
