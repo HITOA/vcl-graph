@@ -2,6 +2,7 @@
 
 #include <VCLG/Core/Allocator.hpp>
 #include <VCLG/Core/IdentityProvider.hpp>
+#include <VCLG/Graph/GraphContext.hpp>
 #include <VCLG/Graph/GraphStorage.hpp>
 #include <VCLG/Graph/Port.hpp>
 #include <VCLG/Graph/Node.hpp>
@@ -16,6 +17,7 @@
 
 #include <vector>
 #include <memory>
+#include <string>
 
 
 namespace VCLG {
@@ -46,6 +48,24 @@ namespace VCLG {
         Connection* FindConnectionByPort(Port* outPort, Port* inPort);
 
         SourceNode* InstantiateSourceNode(VCL::Source* source);
+
+        template<typename T, typename... Args>
+        inline T* InstantiateTransientNode(Args&&... args) {
+            size_t nodeAdditionalDataSize = userDataTailAllocator->GetNodeUserDataAdditionalSize();
+            size_t nodeTotalSize = sizeof(T) + nodeAdditionalDataSize;
+            Identity instancedNodeIdentity = identityProvider.Next();
+            T* ptr = (T*)allocator->Allocate(nodeTotalSize, alignof(T));
+            new (ptr) T{ sizeof(T), *this, instancedNodeIdentity, std::forward<Args>(args)... };
+            ptr->Initialize();
+            void* userDataPtr = ((uint8_t*)ptr) + sizeof(T);
+            userDataTailAllocator->ConstructNodeUserData(ptr, userDataPtr);
+            storage.AddNode(ptr);
+            return ptr;
+        }
+
+        Port* InstantiatePort(Identity owner, VCL::Type* type, const std::string& displayName, 
+            Port::PortKind kind, VCL::ConstantValue* initializer, bool isDependent);
+        void DestroyPort(Port* port);
         
         void DestroyNode(Node* node);
         void DestroyConnection(Identity identity);
@@ -55,9 +75,13 @@ namespace VCLG {
 
         void Reset();
 
+        inline const std::string& GetName() const { return name; }
+        inline void SetName(const std::string& name) { this->name = name; }
+
     private:
         void DestroyNodeConnections(Node* node);
         void DestroySourceNode(SourceNode* node);
+        void DestroyTransientNode(TransientNode* node);
 
         bool ConnectOutputToInput(Port* outPort, Port* inPort);
         bool HasConnection(Port* outPort, Port* inPort);
@@ -75,6 +99,8 @@ namespace VCLG {
         std::vector<Connection> connections;
 
         std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator;
+
+        std::string name;
     };
 
 }

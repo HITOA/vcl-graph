@@ -10,6 +10,7 @@
 #include <string>
 #include <cstdint>
 #include <memory>
+#include <typeinfo>
 
 
 namespace VCLG {
@@ -21,7 +22,7 @@ namespace VCLG {
     public:
         enum NodeClass {
             SourceNodeClass,
-            SubGraphNodeClass,
+            SubgraphNodeClass,
             TransientNodeClass
         };
 
@@ -84,13 +85,30 @@ namespace VCLG {
         llvm::SmallVector<Parameter*, 4> parameters;
     };
 
-    class SubGraphNode : public Node {
+    class SubgraphNode : public Node {
     private:
         std::shared_ptr<GraphInstance> graph;
     };
-
+    
     class TransientNode : public Node {
+    public:
+        TransientNode(size_t size, GraphInstance& owner, const std::string& displayName, Identity identity) : 
+            size{ size }, owner{ owner }, displayName{ displayName }, inPorts{}, outPorts{}, Node{ Node::TransientNodeClass, identity } {};
+        virtual ~TransientNode() = default;
 
+        virtual void Initialize() = 0;
+
+        inline size_t GetSize() const { return size; }
+        inline llvm::StringRef GetDisplayName() const { return displayName; }
+        inline llvm::ArrayRef<Port*> GetInputs() const { return inPorts; }
+        inline llvm::ArrayRef<Port*> GetOutputs() const { return outPorts; }
+
+    protected:
+        size_t size;
+        GraphInstance& owner;
+        std::string displayName;
+        llvm::SmallVector<Port*, 4> inPorts;
+        llvm::SmallVector<Port*, 4> outPorts;
     };
 
 }

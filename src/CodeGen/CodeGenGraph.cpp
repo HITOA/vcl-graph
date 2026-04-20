@@ -82,7 +82,12 @@ bool VCLG::CodeGenGraph::Emit() {
                 if (!EmitSourceNode((SourceNode*)node))
                     return false;
                 break;
+            case Node::TransientNodeClass:
+                if (!EmitTransientNode((TransientNode*)node))
+                    return false;
+                break;
             default:
+                abort();
                 break;
         }
     }
@@ -275,6 +280,11 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
     }
 
     return entrypoint->AddNodeEntrypoint(processFunction);
+}
+
+bool VCLG::CodeGenGraph::EmitTransientNode(TransientNode* node) {
+    // TODO
+    return true;
 }
 
 void VCLG::CodeGenGraph::BuildPortMap() {

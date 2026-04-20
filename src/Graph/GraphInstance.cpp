@@ -16,7 +16,7 @@ VCLG::GraphInstance::GraphInstance(GraphContext& graphContext,
     std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator,
     std::unique_ptr<Allocator> allocator) :
     graphContext{ graphContext }, validator{}, allocator{ std::move(allocator) }, identityProvider{ }, storage{},
-    userDataTailAllocator{ userDataTailAllocator } {
+    userDataTailAllocator{ userDataTailAllocator }, name{ "New Graph" } {
 }
 
 VCLG::GraphInstance::~GraphInstance() {
@@ -54,36 +54,24 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
     llvm::SmallVector<Port*> outPorts;
     llvm::SmallVector<Parameter*> parameters;
 
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
-
     for (SourcePortDefinition* port : definition->GetPorts()) {
         Port::PortKind kind = Port::PortKind::Input;
         if (!port->IsInput())
             kind = Port::PortKind::Output;
 
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
         VCL::ConstantValue* initializer = nullptr;
         if (port->GetDecl()->GetInitializer())
             initializer = port->GetDecl()->GetInitializer()->GetConstantValue();
 
-        Identity instancedPortIdentity = identityProvider.Next();
-        Port* instancedPort = (Port*)allocator->Allocate(portTotalSize, 8);
-        new (instancedPort) Port{ 
-            instancedNodeIdentity, port->GetDecl()->GetValueType().GetType(), port->GetDisplayName(), 
-            kind, initializer, port->IsDependent(), instancedPortIdentity };
-        void* ptr = ((uint8_t*)instancedPort) + sizeof(Port);
-        userDataTailAllocator->ConstructPortUserData(instancedPort, ptr);
-
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
-        storage.AddPort(instancedPort);
-
+        Port* instancedPort = InstantiatePort(instancedNodeIdentity, port->GetDecl()->GetValueType().GetType(), 
+            port->GetDisplayName(), kind, initializer, port->IsDependent());
+        
         if (kind == Port::Input)
             inPorts.push_back(instancedPort);
         else
             outPorts.push_back(instancedPort);
     }
 
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
     for (SourceParameterDefinition* parameter : definition->GetParameters()) {
         VCL::ConstantValue* initializer = nullptr;
         if (parameter->GetDecl()->GetInitializer())
@@ -96,20 +84,17 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
             parameter->GetDisplayName(), 
             initializer, instancedParameterIdentity };
         
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
         void* ptr = ((uint8_t*)instancedParameter) + sizeof(Parameter);
         userDataTailAllocator->ConstructParameterUserData(instancedParameter, ptr);
 
         parameters.push_back(instancedParameter);
     }
 
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
     SourceNode* node = (SourceNode*)allocator->Allocate(nodeTotalSize, 8);
     new (node) SourceNode{ 
         source->GetBufferIdentifier().str(), definition->GetDisplayName(), 
         inPorts, outPorts, parameters, instancedNodeIdentity };
 
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
     for (SourceAutoParameterDefinition* autoParam : definition->GetAutoParameters()) {
         if (autoParam->GetDecl()->GetDeclClass() == VCL::Decl::TypeAliasDeclClass) {
             node->GetSubstitutionTable().SetTypeSubstitution((VCL::TypeAliasDecl*)autoParam->GetDecl(), nullptr);
@@ -118,13 +103,11 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
         }
     }
 
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
     void* ptr = ((uint8_t*)node) + sizeof(SourceNode);
     userDataTailAllocator->ConstructNodeUserData(node, ptr);
 
     storage.AddNode(node);
 
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
     if (definition->HasFlag(SourceNodeDefinition::DefinitionNodeFlag::IsInputNode))
         node->AddFlag(Node::NodeFlag::IsInputNode);
     if (definition->HasFlag(SourceNodeDefinition::DefinitionNodeFlag::IsOutputNode))
@@ -133,14 +116,42 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
     if (definition->GetAutoParameters().size() > 0)
         node->AddFlag(Node::NodeFlag::IsDependent);
 
-    ((VCLG::TLSFAllocator*)allocator.get())->Check();
     return node;
+}
+
+VCLG::Port* VCLG::GraphInstance::InstantiatePort(Identity owner, VCL::Type* type, const std::string& displayName, 
+        Port::PortKind kind, VCL::ConstantValue* initializer, bool isDependent) {
+
+    size_t portAdditionalDataSize = userDataTailAllocator->GetPortUserDataAdditionalSize();
+    size_t portTotalSize = sizeof(Port) + portAdditionalDataSize;
+
+    Identity instancedPortIdentity = identityProvider.Next();
+    Port* port = (Port*)allocator->Allocate(portTotalSize, 8);
+    new (port) Port{ owner, type, displayName, kind, initializer, isDependent, instancedPortIdentity };
+    void* ptr = ((uint8_t*)port) + sizeof(Port);
+    userDataTailAllocator->ConstructPortUserData(port, ptr);
+    storage.AddPort(port);
+
+    return port;
+}
+
+void VCLG::GraphInstance::DestroyPort(Port* port) {
+    size_t portAdditionalDataSize = userDataTailAllocator->GetPortUserDataAdditionalSize();
+    size_t portTotalSize = sizeof(Port) + portAdditionalDataSize;
+    storage.RemovePort(port);
+    void* ptr = ((uint8_t*)port) + sizeof(Port);
+    userDataTailAllocator->DestroyPortUserData(port, ptr);
+    port->~Port();
+    allocator->Deallocate(port, portTotalSize);
 }
 
 void VCLG::GraphInstance::DestroyNode(Node* node) {
     switch (node->GetNodeClass()) {
         case Node::SourceNodeClass:
             DestroySourceNode((SourceNode*)node);
+            break;
+        case Node::TransientNodeClass:
+            DestroyTransientNode((TransientNode*)node);
             break;
         default:
             abort();
@@ -213,20 +224,10 @@ void VCLG::GraphInstance::DestroySourceNode(SourceNode* node) {
 
     DestroyNodeConnections(node);
     storage.RemoveNode(node);
-    for (Port* port : node->GetInputs()) {
-        storage.RemovePort(port);
-        void* ptr = ((uint8_t*)port) + sizeof(Port);
-        userDataTailAllocator->DestroyPortUserData(port, ptr);
-        port->~Port();
-        allocator->Deallocate(port, portTotalSize);
-    }
-    for (Port* port : node->GetOutputs()) {
-        storage.RemovePort(port);
-        void* ptr = ((uint8_t*)port) + sizeof(Port);
-        userDataTailAllocator->DestroyPortUserData(port, ptr);
-        port->~Port();
-        allocator->Deallocate(port, portTotalSize);
-    }
+    for (Port* port : node->GetInputs())
+        DestroyPort(port);
+    for (Port* port : node->GetOutputs())
+        DestroyPort(port);
     for (Parameter* parameter : node->GetParameters()) {
         void* ptr = ((uint8_t*)parameter) + sizeof(Parameter);
         userDataTailAllocator->DestroyParameterUserData(parameter, ptr);
@@ -236,6 +237,21 @@ void VCLG::GraphInstance::DestroySourceNode(SourceNode* node) {
     void* ptr = ((uint8_t*)node) + sizeof(SourceNode);
     userDataTailAllocator->DestroyNodeUserData(node, ptr);
     node->~SourceNode();
+    allocator->Deallocate(node, nodeTotalSize);
+}
+
+void VCLG::GraphInstance::DestroyTransientNode(TransientNode* node) {
+    size_t portAdditionalDataSize = userDataTailAllocator->GetPortUserDataAdditionalSize();
+    size_t portTotalSize = sizeof(Port) + portAdditionalDataSize;
+
+    size_t nodeAdditionalDataSize = userDataTailAllocator->GetNodeUserDataAdditionalSize();
+    size_t nodeTotalSize = node->GetSize() + nodeAdditionalDataSize;
+
+    DestroyNodeConnections(node);
+    storage.RemoveNode(node);
+    void* ptr = ((uint8_t*)node) + node->GetSize();
+    userDataTailAllocator->DestroyNodeUserData(node, ptr);
+    node->~TransientNode();
     allocator->Deallocate(node, nodeTotalSize);
 }
 

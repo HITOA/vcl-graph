@@ -32,6 +32,7 @@ namespace VCLG {
 
         bool Emit();
         bool EmitSourceNode(SourceNode* node);
+        bool EmitTransientNode(TransientNode* node);
     
     private:
         void BuildPortMap();
