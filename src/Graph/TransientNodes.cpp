@@ -29,12 +29,6 @@ VCLG::SubgraphInputNode::~SubgraphInputNode() {
 void VCLG::SubgraphInputNode::Initialize() {
     AddFlag(NodeFlag::IsInputNode);
     VCL::ASTContext& context = owner.GetGraphContext().GetGlobalASTContext();
-    VCL::IdentifierTable& identifierTable = owner.GetGraphContext().GetCompilerContext().GetIdentifierTable();
-    VCL::Type* type = context.GetTypeCache().GetOrCreateBuiltinType(VCL::BuiltinType::Float32);
-    VCL::TypeAliasDecl* aliasDecl = VCL::TypeAliasDecl::Create(context, identifierTable.Get("Generic"), type, VCL::SourceRange{});
-    type = context.GetTypeCache().GetOrCreateTypeAliasType(type, aliasDecl);
-    aliasDecl->SetType(type);
-    Port* port = owner.InstantiatePort(GetIdentity(), type, "Out", Port::PortKind::Output, nullptr, true);
-    GetSubstitutionTable().SetTypeSubstitution(aliasDecl, nullptr);
+    Port* port = owner.InstantiatePort(GetIdentity(), type, "Out", Port::PortKind::Output, nullptr, false);
     outPorts.push_back(port);
 }

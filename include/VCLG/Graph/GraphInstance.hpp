@@ -49,6 +49,8 @@ namespace VCLG {
 
         SourceNode* InstantiateSourceNode(VCL::Source* source);
 
+        SubgraphNode* InstantiateSubgraphNode(std::shared_ptr<GraphInstance> instance);
+
         template<typename T, typename... Args>
         inline T* InstantiateTransientNode(Args&&... args) {
             size_t nodeAdditionalDataSize = userDataTailAllocator->GetNodeUserDataAdditionalSize();
@@ -78,6 +80,9 @@ namespace VCLG {
         inline const std::string& GetName() const { return name; }
         inline void SetName(const std::string& name) { this->name = name; }
 
+        inline void* GetUserDataPtr() const { return userDataPtr; }
+        inline void SetUserDataPtr(void* userDataPtr) { this->userDataPtr = userDataPtr; }
+
     private:
         void DestroyNodeConnections(Node* node);
         void DestroySourceNode(SourceNode* node);
@@ -101,6 +106,7 @@ namespace VCLG {
         std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator;
 
         std::string name;
+        void* userDataPtr;
     };
 
 }

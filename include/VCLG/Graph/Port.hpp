@@ -43,6 +43,7 @@ namespace VCLG {
         inline VCL::Type* GetLastType() const { return substitutedType ? substitutedType : type; }
         inline VCL::Type* GetLastTentativeType() const { return tentativeType ? tentativeType : type; }
         inline const std::string& GetDisplayName() const { return displayName; }
+        inline void SetDisplayName(const std::string& displayName) { this->displayName = displayName; }
         inline PortKind GetKind() const { return kind; }
         inline VCL::ConstantValue* GetInitializer() const { return initializer; }
         inline VCL::ConstantValue* GetInitializerOverride() const { return initializerOverride; }

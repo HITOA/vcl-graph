@@ -119,6 +119,11 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
     return node;
 }
 
+VCLG::SubgraphNode* VCLG::GraphInstance::InstantiateSubgraphNode(std::shared_ptr<GraphInstance> instance) {
+    
+    return nullptr;
+}
+
 VCLG::Port* VCLG::GraphInstance::InstantiatePort(Identity owner, VCL::Type* type, const std::string& displayName, 
         Port::PortKind kind, VCL::ConstantValue* initializer, bool isDependent) {
 

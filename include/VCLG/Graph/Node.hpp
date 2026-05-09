@@ -54,6 +54,8 @@ namespace VCLG {
         static llvm::ArrayRef<Port*> GetNodeInputs(Node* node);
         static llvm::ArrayRef<Port*> GetNodeOutputs(Node* node);
 
+        static void NormalizePortDisplayNameLength(Node* node);
+
     private:
         NodeClass nodeClass;
         NodeFlag flags;
@@ -76,6 +78,8 @@ namespace VCLG {
         inline llvm::ArrayRef<Port*> GetInputs() const { return inPorts; }
         inline llvm::ArrayRef<Port*> GetOutputs() const { return outPorts; }
         inline llvm::ArrayRef<Parameter*> GetParameters() const { return parameters; }
+
+        void NormalizePortAndParameterDisplayNameLength();
 
     private:
         std::string source;
@@ -102,6 +106,8 @@ namespace VCLG {
         inline llvm::StringRef GetDisplayName() const { return displayName; }
         inline llvm::ArrayRef<Port*> GetInputs() const { return inPorts; }
         inline llvm::ArrayRef<Port*> GetOutputs() const { return outPorts; }
+
+        inline void* GetUserDataPtr() const { return ((uint8_t*)this) + size; }
 
     protected:
         size_t size;

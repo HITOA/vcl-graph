@@ -28,6 +28,7 @@ namespace VCLG {
         inline VCL::Type* GetType() const { return type; }
         inline bool IsDependent() const { return type->IsDependent(); }
         inline const std::string& GetDisplayName() const { return displayName; }
+        inline void SetDisplayName(const std::string& displayName) { this->displayName = displayName; }
         inline VCL::ConstantValue* GetInitializer() const { return initializer; }
         inline VCL::ConstantValue* GetInitializerOverride() const { return initializerOverride; }
         inline Identity GetIdentity() const { return identity; }
