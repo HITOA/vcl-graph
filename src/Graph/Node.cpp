@@ -51,9 +51,10 @@ void VCLG::Node::NormalizePortDisplayNameLength(Node* node) {
     for (VCLG::Port* output : outputs) {
         if (output->GetDisplayName().size() >= longestOutputDisplayName)
             continue;
-        std::string displayName = output->GetDisplayName();
-        for (size_t i = displayName.size(); i < longestOutputDisplayName; ++i)
+        std::string displayName = "";
+        for (size_t i = displayName.size() + output->GetDisplayName().size(); i < longestOutputDisplayName; ++i)
             displayName += " ";
+        displayName += output->GetDisplayName();
         output->SetDisplayName(displayName);
     }
 }
@@ -84,9 +85,10 @@ void VCLG::SourceNode::NormalizePortAndParameterDisplayNameLength() {
     for (VCLG::Port* output : outPorts) {
         if (output->GetDisplayName().size() >= longestOutputDisplayName)
             continue;
-        std::string displayName = output->GetDisplayName();
-        for (size_t i = displayName.size(); i < longestOutputDisplayName; ++i)
+        std::string displayName = "";
+        for (size_t i = displayName.size() + output->GetDisplayName().size(); i < longestOutputDisplayName; ++i)
             displayName += " ";
+        displayName += output->GetDisplayName();
         output->SetDisplayName(displayName);
     }
 
