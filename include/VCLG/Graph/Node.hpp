@@ -17,6 +17,9 @@ namespace VCLG {
     class Port;
     class Parameter;
     class GraphInstance;
+    class SourceNode;
+    class SubgraphNode;
+    class TransientNode;
 
     class Node {
     public:
@@ -55,6 +58,21 @@ namespace VCLG {
         static llvm::ArrayRef<Port*> GetNodeOutputs(Node* node);
 
         static void NormalizePortDisplayNameLength(Node* node);
+
+        template<typename T>
+        inline T* GetTrailingData() {
+            switch (nodeClass) {
+                case NodeClass::SourceNodeClass:
+                    return (T*)(((SourceNode*)this) + 1);
+                case NodeClass::SubgraphNodeClass:
+                    return (T*)(((SubgraphNode*)this) + 1);
+                case NodeClass::TransientNodeClass:
+                    return (T*)(((TransientNode*)this) + 1);
+                default:
+                    assert(false && "UNREACHABLE");
+                    return nullptr;
+            }
+        }
 
     private:
         NodeClass nodeClass;

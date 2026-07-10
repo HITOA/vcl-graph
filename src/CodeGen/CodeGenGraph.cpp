@@ -98,7 +98,10 @@ bool VCLG::CodeGenGraph::Emit() {
 }
 
 bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
-    VCL::Source* source = cc.GetSourceManager().LoadFromMemory("", node->GetSource());
+    std::cout << node->GetSource().str() << std::endl;
+    VCL::Source* source = cc.GetSourceManager().GetSourceFromName(node->GetSource());
+    assert(source != nullptr);
+
     SourceNodeDefinition* nodeDefinition = graphContext.GetDefinitionRegistry().GetOrCreateSourceNodeDefinition(source);
 
     std::shared_ptr<VCL::CompilerInstance> instance = cc.CreateInstance();

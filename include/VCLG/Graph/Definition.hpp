@@ -124,6 +124,7 @@ namespace VCLG {
 
         inline bool HasFlag(DefinitionNodeFlag flag) const { return ((uint32_t)flags & (uint32_t)flag) != 0; }
         inline void AddFlag(DefinitionNodeFlag flag) { this->flags = (DefinitionNodeFlag)((uint32_t)flags | (uint32_t)flag); }
+        inline DefinitionNodeFlag GetFlag() const { return flags; }
     
     private:
         size_t numTrailingObjects(OverloadToken<SourcePortDefinition*>) const {
