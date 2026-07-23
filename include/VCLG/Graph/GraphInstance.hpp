@@ -44,6 +44,7 @@ namespace VCLG {
 
         inline Node* GetNodeByIdentity(Identity identity) const { return storage.GetNodeByIdentity(identity); }
         inline Port* GetPortByIdentity(Identity identity) const { return storage.GetPortByIdentity(identity); }
+        inline Parameter* GetParameterByIdentity(Identity identity) const { return storage.GetParameterByIdentity(identity); }
 
         Connection* FindConnectionByPort(Port* outPort, Port* inPort);
 
@@ -68,12 +69,15 @@ namespace VCLG {
         Port* InstantiatePort(Identity owner, VCL::Type* type, const std::string& displayName, 
             Port::PortKind kind, VCL::ConstantValue* initializer, bool isDependent);
         void DestroyPort(Port* port);
+
+        Parameter* InstantiateParameter(Identity owner, VCL::Type* type, const std::string& displayName, VCL::ConstantValue* initializer);
+        void DestroyParameter(Parameter* parameter);
         
         void DestroyNode(Node* node);
         void DestroyConnection(Identity identity);
 
-        bool Connect(Identity portAIdentity, Identity portBIdentity);
-        bool Connect(Port* portA, Port* portB);
+        Identity Connect(Identity portAIdentity, Identity portBIdentity);
+        Identity Connect(Port* portA, Port* portB);
 
         void Reset();
 
@@ -88,8 +92,8 @@ namespace VCLG {
         void DestroySourceNode(SourceNode* node);
         void DestroyTransientNode(TransientNode* node);
 
-        bool ConnectOutputToInput(Port* outPort, Port* inPort);
-        bool HasConnection(Port* outPort, Port* inPort);
+        Identity ConnectOutputToInput(Port* outPort, Port* inPort);
+        Identity HasConnection(Port* outPort, Port* inPort);
         bool CanBeConnected(VCL::Type* outType, VCL::Type* inType);
 
     private:

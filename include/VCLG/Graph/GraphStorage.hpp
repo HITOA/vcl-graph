@@ -4,6 +4,7 @@
 #include <VCLG/Core/IdentityProvider.hpp>
 #include <VCLG/Graph/Node.hpp>
 #include <VCLG/Graph/Port.hpp>
+#include <VCLG/Graph/Parameter.hpp>
 
 #include <memory>
 #include <vector>
@@ -61,12 +62,28 @@ namespace VCLG {
             return nullptr;
         }
 
+        inline void AddParameter(Parameter* parameter) {
+            identityToParameter.insert({ parameter->GetIdentity(), parameter });
+        }
+
+        inline void RemoveParameter(Parameter* parameter) {
+            if (identityToParameter.count(parameter->GetIdentity()))
+                identityToParameter.erase(parameter->GetIdentity());
+        }
+
+        inline Parameter* GetParameterByIdentity(Identity identity) const {
+            if (identityToParameter.count(identity))
+                return identityToParameter.at(identity);
+            return nullptr;
+        }
+
         inline llvm::ArrayRef<Node*> GetNodes() const { return nodes; }
         
     private:
         std::vector<Node*> nodes;
         llvm::DenseMap<Identity, Node*> identityToNode;
         llvm::DenseMap<Identity, Port*> identityToPort;
+        llvm::DenseMap<Identity, Parameter*> identityToParameter;
     };
 
 }

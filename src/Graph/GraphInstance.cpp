@@ -77,15 +77,8 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
         if (parameter->GetDecl()->GetInitializer())
             initializer = parameter->GetDecl()->GetInitializer()->GetConstantValue();
 
-        Identity instancedParameterIdentity = identityProvider.Next();
-        Parameter* instancedParameter = (Parameter*)allocator->Allocate(parameterTotalSize, 8);
-        new (instancedParameter) Parameter{ 
-            instancedNodeIdentity, parameter->GetDecl()->GetValueType().GetType(), 
-            parameter->GetDisplayName(), 
-            initializer, instancedParameterIdentity };
-        
-        void* ptr = ((uint8_t*)instancedParameter) + sizeof(Parameter);
-        userDataTailAllocator->ConstructParameterUserData(instancedParameter, ptr);
+        Parameter* instancedParameter = InstantiateParameter(instancedNodeIdentity, 
+            parameter->GetDecl()->GetValueType().GetType(), parameter->GetDisplayName(), initializer);
 
         parameters.push_back(instancedParameter);
     }
@@ -150,6 +143,34 @@ void VCLG::GraphInstance::DestroyPort(Port* port) {
     allocator->Deallocate(port, portTotalSize);
 }
 
+VCLG::Parameter* VCLG::GraphInstance::InstantiateParameter(Identity owner, VCL::Type* type, const std::string& displayName, VCL::ConstantValue* initializer) {
+    size_t parameterAdditionalDataSize = userDataTailAllocator->GetParameterUserDataAdditionalSize();
+    size_t parameterTotalSize = sizeof(Parameter) + parameterAdditionalDataSize;
+    
+    Identity instancedParameterIdentity = identityProvider.Next();
+    Parameter* instancedParameter = (Parameter*)allocator->Allocate(parameterTotalSize, 8);
+    new (instancedParameter) Parameter{ 
+        owner, type, displayName, 
+        initializer, instancedParameterIdentity };
+    
+    void* ptr = ((uint8_t*)instancedParameter) + sizeof(Parameter);
+    userDataTailAllocator->ConstructParameterUserData(instancedParameter, ptr);
+    storage.AddParameter(instancedParameter);
+
+    return instancedParameter;
+}
+
+void VCLG::GraphInstance::DestroyParameter(Parameter* parameter) {
+    size_t parameterAdditionalDataSize = userDataTailAllocator->GetParameterUserDataAdditionalSize();
+    size_t parameterTotalSize = sizeof(Parameter) + parameterAdditionalDataSize;
+    
+    storage.RemoveParameter(parameter);
+    void* ptr = ((uint8_t*)parameter) + sizeof(Parameter);
+    userDataTailAllocator->DestroyParameterUserData(parameter, ptr);
+    parameter->~Parameter();
+    allocator->Deallocate(parameter, parameterAdditionalDataSize);
+}
+
 void VCLG::GraphInstance::DestroyNode(Node* node) {
     switch (node->GetNodeClass()) {
         case Node::SourceNodeClass:
@@ -179,15 +200,15 @@ void VCLG::GraphInstance::DestroyConnection(Identity identity) {
     validator.Validate(*this);
 }
 
-bool VCLG::GraphInstance::Connect(Identity portAIdentity, Identity portBIdentity) {
+VCLG::Identity VCLG::GraphInstance::Connect(Identity portAIdentity, Identity portBIdentity) {
     Port* portA = storage.GetPortByIdentity(portAIdentity);
     Port* portB = storage.GetPortByIdentity(portBIdentity);
     return Connect(portA, portB);
 }
 
-bool VCLG::GraphInstance::Connect(Port* portA, Port* portB) {
+VCLG::Identity VCLG::GraphInstance::Connect(Port* portA, Port* portB) {
     if (portA->GetKind() == portB->GetKind())
-        return false;
+        return INVALID_IDENTITY;
     
     if (portA->GetKind() == Port::Input)
         return ConnectOutputToInput(portB, portA);
@@ -233,12 +254,8 @@ void VCLG::GraphInstance::DestroySourceNode(SourceNode* node) {
         DestroyPort(port);
     for (Port* port : node->GetOutputs())
         DestroyPort(port);
-    for (Parameter* parameter : node->GetParameters()) {
-        void* ptr = ((uint8_t*)parameter) + sizeof(Parameter);
-        userDataTailAllocator->DestroyParameterUserData(parameter, ptr);
-        parameter->~Parameter();
-        allocator->Deallocate(parameter, parameterTotalSize);
-    }
+    for (Parameter* parameter : node->GetParameters())
+        DestroyParameter(parameter);
     void* ptr = ((uint8_t*)node) + sizeof(SourceNode);
     userDataTailAllocator->DestroyNodeUserData(node, ptr);
     node->~SourceNode();
@@ -260,13 +277,13 @@ void VCLG::GraphInstance::DestroyTransientNode(TransientNode* node) {
     allocator->Deallocate(node, nodeTotalSize);
 }
 
-bool VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* inPort) {
-    if (HasConnection(outPort, inPort))
-        return true;
+VCLG::Identity VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* inPort) {
+    if (Identity identity = HasConnection(outPort, inPort); identity != INVALID_IDENTITY)
+        return identity;
     
     for (Connection& conn : connections)
         if (conn.GetInputPortIdentity() == inPort->GetIdentity())
-            return false;
+            return INVALID_IDENTITY;
 
     VCL::Type* outType = outPort->GetLastType();
     VCL::Type* inType = inPort->GetLastType();
@@ -279,7 +296,7 @@ bool VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* inPort) {
                 Identity connectionIdentity = identityProvider.Next();
                 connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, converter);
                 converter->OnLinkCreated(outPort, inPort);
-                return true;
+                return connectionIdentity;
             }
         }
     } if (outPort->IsDependent() || inPort->IsDependent()) {
@@ -287,7 +304,7 @@ bool VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* inPort) {
         connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, nullptr);
         if (validator.Validate(*this)) {
             identityProvider.Next();
-            return true;
+            return connectionIdentity;
         } else {
             for (int i = 0; i < connections.size(); ++i) {
                 if (connections[i].GetIdentity() == connectionIdentity) {
@@ -295,22 +312,22 @@ bool VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* inPort) {
                     break;
                 }
             }
-            return false;
+            return INVALID_IDENTITY;
         }
     } else if (VCL::Type::IsCanonicallyEqual(outType, inType)) {
         Identity connectionIdentity = identityProvider.Next();
         connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, nullptr);
-        return true;
+        return connectionIdentity;
     }
 
-    return false;
+    return INVALID_IDENTITY;
 }
 
-bool VCLG::GraphInstance::HasConnection(Port* outPort, Port* inPort) {
+VCLG::Identity VCLG::GraphInstance::HasConnection(Port* outPort, Port* inPort) {
     for (Connection& conn : connections)
         if (conn.GetInputPortIdentity() == inPort->GetIdentity() && conn.GetOutputPortIdentity() == outPort->GetIdentity())
-            return true;
-    return false;
+            return conn.GetIdentity();
+    return INVALID_IDENTITY;
 }
 
 bool VCLG::GraphInstance::CanBeConnected(VCL::Type* outType, VCL::Type* inType) {

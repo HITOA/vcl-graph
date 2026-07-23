@@ -4,6 +4,8 @@
 #include <atomic>
 
 
+#define INVALID_IDENTITY (Identity(0))
+
 namespace VCLG {
     using Identity = uint32_t;
 
@@ -17,10 +19,10 @@ namespace VCLG {
             return next.load(std::memory_order_relaxed);
         }
 
-        inline void Reset() { next.store(0); }
+        inline void Reset() { next.store(1); }
 
     private:
-        std::atomic<Identity> next{ 0 };
+        std::atomic<Identity> next{ 1 };
     };
 
 }
