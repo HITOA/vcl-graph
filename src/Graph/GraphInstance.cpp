@@ -13,7 +13,7 @@
 
 
 VCLG::GraphInstance::GraphInstance(GraphContext& graphContext, 
-    std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator,
+    std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator,
     std::unique_ptr<Allocator> allocator) :
     graphContext{ graphContext }, validator{}, allocator{ std::move(allocator) }, identityProvider{ }, storage{},
     userDataTailAllocator{ userDataTailAllocator }, name{ "New Graph" } {
@@ -110,11 +110,6 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
         node->AddFlag(Node::NodeFlag::IsDependent);
 
     return node;
-}
-
-VCLG::SubgraphNode* VCLG::GraphInstance::InstantiateSubgraphNode(std::shared_ptr<GraphInstance> instance) {
-    
-    return nullptr;
 }
 
 VCLG::Port* VCLG::GraphInstance::InstantiatePort(Identity owner, VCL::Type* type, const std::string& displayName, 

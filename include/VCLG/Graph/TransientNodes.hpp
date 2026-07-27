@@ -9,29 +9,29 @@ namespace VCLG {
 
     class SubgraphOutputNode : public TransientNode {
     public:
-        SubgraphOutputNode(size_t size, GraphInstance& owner, Identity identity, const std::string& displayName) : 
-                TransientNode{ size, owner, displayName, identity } {}
+        SubgraphOutputNode(size_t size, GraphInstance& owner, Identity identity) : 
+                TransientNode{ size, owner, "New Output", identity } {}
         ~SubgraphOutputNode();
 
         void Initialize() override;
 
-        inline std::string& GetDisplayNameString() { return displayName; }
+        inline void SetDisplayName(const std::string& name) { displayName = name; }
     };
 
     class SubgraphInputNode : public TransientNode {
     public:
-        SubgraphInputNode(size_t size, GraphInstance& owner, Identity identity, const std::string& displayName, VCL::Type* type) : 
-                type{ type }, TransientNode{ size, owner, displayName, identity } {}
+        SubgraphInputNode(size_t size, GraphInstance& owner, Identity identity) : 
+                TransientNode{ size, owner, "New Input", identity } {}
         ~SubgraphInputNode();
 
         void Initialize() override;
 
         inline VCL::Type* GetType() const { return type; }
 
-        inline std::string& GetDisplayNameString() { return displayName; }
+        inline void SetDisplayName(const std::string& name) { displayName = name; }
     
-    private:
-        VCL::Type* type;
+    protected:
+        VCL::Type* type{};
     };
 
 }

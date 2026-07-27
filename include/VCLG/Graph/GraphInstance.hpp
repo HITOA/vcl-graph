@@ -27,7 +27,7 @@ namespace VCLG {
     public:
         GraphInstance() = delete;
         GraphInstance(GraphContext& graphContext, 
-            std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTailAllocator>(),
+            std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTrailAllocator>(),
             std::unique_ptr<Allocator> allocator = std::make_unique<TLSFAllocator>());
         GraphInstance(const GraphInstance& other) = delete;
         GraphInstance(GraphInstance&& other) = delete;
@@ -49,8 +49,6 @@ namespace VCLG {
         Connection* FindConnectionByPort(Port* outPort, Port* inPort);
 
         SourceNode* InstantiateSourceNode(VCL::Source* source);
-
-        SubgraphNode* InstantiateSubgraphNode(std::shared_ptr<GraphInstance> instance);
 
         template<typename T, typename... Args>
         inline T* InstantiateTransientNode(Args&&... args) {
@@ -107,7 +105,7 @@ namespace VCLG {
 
         std::vector<Connection> connections;
 
-        std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator;
+        std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator;
 
         std::string name;
         void* userDataPtr;

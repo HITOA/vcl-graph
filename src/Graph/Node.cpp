@@ -101,3 +101,15 @@ void VCLG::SourceNode::NormalizePortAndParameterDisplayNameLength() {
         parameter->SetDisplayName(displayName);
     }
 }
+
+void* VCLG::Node::GetTrailingDataRawPtr() const {
+    switch (nodeClass) {
+        case NodeClass::SourceNodeClass:
+            return (((SourceNode*)this) + 1);
+        case NodeClass::TransientNodeClass:
+            return ((uint8_t*)this) + ((TransientNode*)this)->GetSize();
+        default:
+            assert(false && "UNREACHABLE");
+            return nullptr;
+    }
+}

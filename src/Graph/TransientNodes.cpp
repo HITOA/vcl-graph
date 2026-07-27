@@ -11,6 +11,7 @@ VCLG::SubgraphOutputNode::~SubgraphOutputNode() {
 
 void VCLG::SubgraphOutputNode::Initialize() {
     AddFlag(NodeFlag::IsOutputNode);
+    AddFlag(NodeFlag::IsDependent);
     VCL::ASTContext& context = owner.GetGraphContext().GetGlobalASTContext();
     VCL::IdentifierTable& identifierTable = owner.GetGraphContext().GetCompilerContext().GetIdentifierTable();
     VCL::Type* type = context.GetTypeCache().GetOrCreateBuiltinType(VCL::BuiltinType::Float32);

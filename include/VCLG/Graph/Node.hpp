@@ -25,7 +25,6 @@ namespace VCLG {
     public:
         enum NodeClass {
             SourceNodeClass,
-            SubgraphNodeClass,
             TransientNodeClass
         };
 
@@ -61,18 +60,11 @@ namespace VCLG {
 
         template<typename T>
         inline T* GetTrailingData() {
-            switch (nodeClass) {
-                case NodeClass::SourceNodeClass:
-                    return (T*)(((SourceNode*)this) + 1);
-                case NodeClass::SubgraphNodeClass:
-                    return (T*)(((SubgraphNode*)this) + 1);
-                case NodeClass::TransientNodeClass:
-                    return (T*)(((TransientNode*)this) + 1);
-                default:
-                    assert(false && "UNREACHABLE");
-                    return nullptr;
-            }
+            return (T*)GetTrailingDataRawPtr();
         }
+
+    private:
+        void* GetTrailingDataRawPtr() const;
 
     private:
         NodeClass nodeClass;
@@ -106,11 +98,6 @@ namespace VCLG {
         llvm::SmallVector<Port*, 4> outPorts;
         llvm::SmallVector<Parameter*, 4> parameters;
     };
-
-    class SubgraphNode : public Node {
-    private:
-        std::shared_ptr<GraphInstance> graph;
-    };
     
     class TransientNode : public Node {
     public:
@@ -124,8 +111,6 @@ namespace VCLG {
         inline llvm::StringRef GetDisplayName() const { return displayName; }
         inline llvm::ArrayRef<Port*> GetInputs() const { return inPorts; }
         inline llvm::ArrayRef<Port*> GetOutputs() const { return outPorts; }
-
-        inline void* GetUserDataPtr() const { return ((uint8_t*)this) + size; }
 
     protected:
         size_t size;

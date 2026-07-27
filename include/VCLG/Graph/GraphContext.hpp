@@ -34,7 +34,7 @@ namespace VCLG {
         void AddConverter(Converter* converter);
 
         std::shared_ptr<GraphInstance> CreateInstance(
-            std::shared_ptr<GraphUserDataTailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTailAllocator>(),
+            std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTrailAllocator>(),
             std::unique_ptr<Allocator> allocator = std::make_unique<TLSFAllocator>());
 
     private:

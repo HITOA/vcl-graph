@@ -8,7 +8,7 @@ namespace VCLG {
     class Port;
     class Parameter;
 
-    class GraphUserDataTailAllocator {
+    class GraphUserDataTrailAllocator {
     public:
         virtual void ConstructNodeUserData(Node* node, void* ptr) const {}
         virtual void DestroyNodeUserData(Node* node, void* ptr) const {}
