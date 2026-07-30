@@ -101,18 +101,21 @@ namespace VCLG {
     
     class TransientNode : public Node {
     public:
-        TransientNode(size_t size, GraphInstance& owner, const std::string& displayName, Identity identity) : 
-            size{ size }, owner{ owner }, displayName{ displayName }, inPorts{}, outPorts{}, Node{ Node::TransientNodeClass, identity } {};
+        TransientNode(size_t hash, size_t size, GraphInstance& owner, const std::string& displayName, Identity identity) : 
+            hash{ hash }, size{ size }, owner{ owner }, displayName{ displayName }, inPorts{}, outPorts{}, Node{ Node::TransientNodeClass, identity } {};
         virtual ~TransientNode() = default;
 
         virtual void Initialize() = 0;
+        virtual void Destroy() = 0;
 
+        inline size_t GetHash() const { return hash; }
         inline size_t GetSize() const { return size; }
         inline llvm::StringRef GetDisplayName() const { return displayName; }
         inline llvm::ArrayRef<Port*> GetInputs() const { return inPorts; }
         inline llvm::ArrayRef<Port*> GetOutputs() const { return outPorts; }
 
     protected:
+        size_t hash;
         size_t size;
         GraphInstance& owner;
         std::string displayName;

@@ -129,6 +129,7 @@ VCLG::Port* VCLG::GraphInstance::InstantiatePort(Identity owner, VCL::Type* type
 }
 
 void VCLG::GraphInstance::DestroyPort(Port* port) {
+    DestroyAllPortConnections(port->GetIdentity());
     size_t portAdditionalDataSize = userDataTailAllocator->GetPortUserDataAdditionalSize();
     size_t portTotalSize = sizeof(Port) + portAdditionalDataSize;
     storage.RemovePort(port);
@@ -193,6 +194,18 @@ void VCLG::GraphInstance::DestroyConnection(Identity identity) {
         }
     }
     validator.Validate(*this);
+}
+
+void VCLG::GraphInstance::DestroyAllPortConnections(Identity identity) {
+    int i = 0;
+    while (i < connections.size()) {
+        const Connection& connection = connections[i];
+        if (connection.GetInputPortIdentity() == identity || connection.GetOutputPortIdentity() == identity) {
+            DestroyConnection(connection.GetIdentity());
+        } else {
+            ++i;
+        }
+    }
 }
 
 VCLG::Identity VCLG::GraphInstance::Connect(Identity portAIdentity, Identity portBIdentity) {
@@ -268,6 +281,7 @@ void VCLG::GraphInstance::DestroyTransientNode(TransientNode* node) {
     storage.RemoveNode(node);
     void* ptr = ((uint8_t*)node) + node->GetSize();
     userDataTailAllocator->DestroyNodeUserData(node, ptr);
+    node->Destroy();
     node->~TransientNode();
     allocator->Deallocate(node, nodeTotalSize);
 }

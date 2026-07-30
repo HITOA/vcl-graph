@@ -56,7 +56,7 @@ namespace VCLG {
             size_t nodeTotalSize = sizeof(T) + nodeAdditionalDataSize;
             Identity instancedNodeIdentity = identityProvider.Next();
             T* ptr = (T*)allocator->Allocate(nodeTotalSize, alignof(T));
-            new (ptr) T{ sizeof(T), *this, instancedNodeIdentity, std::forward<Args>(args)... };
+            new (ptr) T{ typeid(T).hash_code(), sizeof(T), *this, instancedNodeIdentity, std::forward<Args>(args)... };
             ptr->Initialize();
             void* userDataPtr = ((uint8_t*)ptr) + sizeof(T);
             userDataTailAllocator->ConstructNodeUserData(ptr, userDataPtr);
@@ -73,6 +73,7 @@ namespace VCLG {
         
         void DestroyNode(Node* node);
         void DestroyConnection(Identity identity);
+        void DestroyAllPortConnections(Identity portIdentity);
 
         Identity Connect(Identity portAIdentity, Identity portBIdentity);
         Identity Connect(Port* portA, Port* portB);
