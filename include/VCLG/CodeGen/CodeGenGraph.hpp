@@ -33,6 +33,12 @@ namespace VCLG {
         bool Emit();
         bool EmitSourceNode(SourceNode* node);
         bool EmitTransientNode(TransientNode* node);
+
+        Port* GetInPortToOutPort(Port* inPort);
+        llvm::GlobalVariable* GetOutPortGlobalVar(Port* port);
+        void AddOutPortGlobalVar(Port* port, llvm::GlobalVariable* var);
+
+        void ImportSubgraph(CodeGenGraph& codegen);
     
     private:
         void BuildPortMap();

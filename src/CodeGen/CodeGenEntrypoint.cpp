@@ -2,6 +2,8 @@
 
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
 
+#include <iostream>
+
 
 VCLG::CodeGenEntrypoint::CodeGenEntrypoint(CodeGenGraph& cgg, llvm::StringRef name) : cgg{ cgg }, name{ name }, function{}, builder{ cgg.GetLLVMContext() } {}
 
@@ -10,15 +12,26 @@ void VCLG::CodeGenEntrypoint::Begin() {
     function = llvm::cast<llvm::Function>(cgg.GetLLVMModule().getOrInsertFunction(name, functionType).getCallee());
     function->setLinkage(llvm::GlobalValue::ExternalLinkage);
     function->setDSOLocal(true);
-    llvm::BasicBlock* bb = llvm::BasicBlock::Create(cgg.GetLLVMContext(), "entry", function);
-    builder.SetInsertPoint(bb);
+    if (function->size() > 0) {
+        bb = &function->front();
+        owner = false;
+    } else {
+        bb = llvm::BasicBlock::Create(cgg.GetLLVMContext(), "entry", function);
+        owner = true;
+    }
+    
+    builder.SetInsertPoint(bb, bb->end());
 }
 
 void VCLG::CodeGenEntrypoint::End() {
-    builder.CreateRetVoid();
+    if (!bb->getTerminator() && owner == true) {
+        builder.SetInsertPoint(bb, bb->end());
+        builder.CreateRetVoid();
+    }
 }
 
 bool VCLG::CodeGenEntrypoint::AddNodeEntrypoint(llvm::Function* callee) {
+    builder.SetInsertPoint(bb, bb->end());
     builder.CreateCall(callee);
     return true;
 }

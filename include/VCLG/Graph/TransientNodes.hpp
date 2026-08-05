@@ -16,6 +16,7 @@ namespace VCLG {
 
         void Initialize() override;
         void Destroy() override;
+        bool Emit(CodeGenGraph& codegen) override;
 
         VCL::Type* GetType();
 
@@ -29,6 +30,7 @@ namespace VCLG {
 
         void Initialize() override;
         void Destroy() override;
+        bool Emit(CodeGenGraph& codegen) override;
 
         inline VCL::Type* GetType() const { return type; }
 
@@ -47,6 +49,7 @@ namespace VCLG {
         
         void Initialize() override;
         void Destroy() override;
+        bool Emit(CodeGenGraph& codegen) override;
         void SetGraph(std::shared_ptr<GraphInstance> instance);
         void Update();
 

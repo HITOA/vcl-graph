@@ -3,6 +3,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/BasicBlock.h>
 
 
 namespace VCLG {
@@ -31,7 +32,9 @@ namespace VCLG {
         llvm::StringRef name;
         
         llvm::Function* function;
+        llvm::BasicBlock* bb;
         llvm::IRBuilder<> builder;
+        bool owner;
     };
 
 }

@@ -98,7 +98,6 @@ bool VCLG::CodeGenGraph::Emit() {
 }
 
 bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
-    std::cout << node->GetSource().str() << std::endl;
     VCL::Source* source = cc.GetSourceManager().GetSourceFromName(node->GetSource());
     assert(source != nullptr);
 
@@ -286,8 +285,31 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
 }
 
 bool VCLG::CodeGenGraph::EmitTransientNode(TransientNode* node) {
-    // TODO
-    return true;
+    return node->Emit(*this);
+}
+
+VCLG::Port* VCLG::CodeGenGraph::GetInPortToOutPort(Port* inPort) {
+    if (inPortToOutPort.count(inPort))
+        return inPortToOutPort[inPort];
+    return nullptr;
+}
+
+llvm::GlobalVariable* VCLG::CodeGenGraph::GetOutPortGlobalVar(Port* port) {
+    if (outPortGlobalVar.count(port))
+        return outPortGlobalVar[port];
+    return nullptr;
+}
+
+void VCLG::CodeGenGraph::AddOutPortGlobalVar(Port* port, llvm::GlobalVariable* var) {
+    outPortGlobalVar.insert({ port, var });
+}
+
+void VCLG::CodeGenGraph::ImportSubgraph(CodeGenGraph& codegen) {
+    for (auto instance : codegen.nodeCompilerInstances)
+        nodeCompilerInstances.push_back(instance);
+
+    for (auto module : codegen.aggregatedImportedModuleTable)
+        aggregatedImportedModuleTable.Add(module.first, module.second);
 }
 
 void VCLG::CodeGenGraph::BuildPortMap() {

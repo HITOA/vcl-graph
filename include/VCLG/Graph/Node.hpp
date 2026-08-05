@@ -20,6 +20,7 @@ namespace VCLG {
     class SourceNode;
     class SubgraphNode;
     class TransientNode;
+    class CodeGenGraph;
 
     class Node {
     public:
@@ -107,6 +108,7 @@ namespace VCLG {
 
         virtual void Initialize() = 0;
         virtual void Destroy() = 0;
+        virtual bool Emit(CodeGenGraph& codegen) = 0;
 
         inline size_t GetHash() const { return hash; }
         inline size_t GetSize() const { return size; }
