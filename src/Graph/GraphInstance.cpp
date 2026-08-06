@@ -12,10 +12,10 @@
 #include <iostream>
 
 
-VCLG::GraphInstance::GraphInstance(GraphContext& graphContext, 
+VCLG::GraphInstance::GraphInstance(GraphContext& graphContext, Identity identity,
     std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator,
     std::unique_ptr<Allocator> allocator) :
-    graphContext{ graphContext }, validator{}, allocator{ std::move(allocator) }, identityProvider{ }, storage{},
+    graphContext{ graphContext }, identity{ identity }, validator{}, allocator{ std::move(allocator) }, identityProvider{ }, storage{},
     userDataTailAllocator{ userDataTailAllocator }, name{ "New Graph" } {
 }
 

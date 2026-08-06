@@ -26,7 +26,7 @@ namespace VCLG {
     class GraphInstance {
     public:
         GraphInstance() = delete;
-        GraphInstance(GraphContext& graphContext, 
+        GraphInstance(GraphContext& graphContext, Identity identity, 
             std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTrailAllocator>(),
             std::unique_ptr<Allocator> allocator = std::make_unique<TLSFAllocator>());
         GraphInstance(const GraphInstance& other) = delete;
@@ -37,6 +37,7 @@ namespace VCLG {
         GraphInstance& operator=(GraphInstance&& other) = delete;
 
         inline GraphContext& GetGraphContext() { return graphContext; }
+        inline Identity GetIdentity() const { return identity; }
         inline GraphValidator& GetGraphValidator() { return validator; }
 
         inline llvm::ArrayRef<Node*> GetNodes() const { return storage.GetNodes(); }
@@ -96,6 +97,7 @@ namespace VCLG {
         bool CanBeConnected(VCL::Type* outType, VCL::Type* inType);
 
     private:
+        Identity identity;
         GraphContext& graphContext;
 
         GraphValidator validator;
