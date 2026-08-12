@@ -107,6 +107,10 @@ bool VCLG::SubgraphInputNode::Emit(CodeGenGraph& codegen) {
     return true;
 }
 
+VCL::Type* VCLG::SubgraphInputNode::GetType() {
+    return type;
+}
+
 void VCLG::SubgraphNode::Initialize() {
 
 }
@@ -119,6 +123,20 @@ void VCLG::SubgraphNode::Destroy() {
 }
 
 bool VCLG::SubgraphNode::Emit(CodeGenGraph& codegen) {
+    for (Node* node : instance->GetNodes()) {
+        if (node->GetNodeClass() != Node::TransientNodeClass)
+            continue;
+        TransientNode* transientNode = (TransientNode*)node;
+        if (transientNode->GetHash() == typeid(SubgraphInputNode).hash_code()) {
+            SubgraphInputNode* inputNode = (SubgraphInputNode*)transientNode;
+            if (nodeToPort.count(transientNode->GetIdentity())) {
+                Port* port = owner.GetPortByIdentity(nodeToPort.at(transientNode->GetIdentity()));
+                if (port->GetOverrideType() != nullptr)
+                    inputNode->GetOutputs()[0]->SetOverrideType(port->GetOverrideType());
+            }
+        }
+    }
+
     CodeGenGraph current{ instance->GetGraphContext(), *instance, codegen.GetLLVMModule() };
     if (!current.Emit())
         return false;
@@ -134,6 +152,8 @@ bool VCLG::SubgraphNode::Emit(CodeGenGraph& codegen) {
             if (nodeToPort.count(transientNode->GetIdentity())) {
                 Port* port = owner.GetPortByIdentity(nodeToPort.at(transientNode->GetIdentity()));
                 llvm::GlobalVariable* variable = current.GetOutPortGlobalVar(outputNode->GetInputs()[0]);
+                if (!variable)
+                    continue;
                 codegen.AddOutPortGlobalVar(port, variable);
             }
         } else if (transientNode->GetHash() == typeid(SubgraphInputNode).hash_code()) {
@@ -141,11 +161,41 @@ bool VCLG::SubgraphNode::Emit(CodeGenGraph& codegen) {
             if (nodeToPort.count(transientNode->GetIdentity())) {
                 Port* port = owner.GetPortByIdentity(nodeToPort.at(transientNode->GetIdentity()));
                 llvm::GlobalVariable* variable = current.GetOutPortGlobalVar(inputNode->GetOutputs()[0]);
+                if (!variable)
+                    continue;
                 Port* connectedPort = codegen.GetInPortToOutPort(port);
-                llvm::GlobalVariable* connectedVariable = codegen.GetOutPortGlobalVar(connectedPort);
-                variable->setInitializer(connectedVariable->getInitializer());
-                variable->replaceAllUsesWith(connectedVariable);
-                variable->eraseFromParent();
+                if (connectedPort != nullptr) {
+                    llvm::GlobalVariable* connectedVariable = codegen.GetOutPortGlobalVar(connectedPort);
+                    variable->setInitializer(connectedVariable->getInitializer());
+                    variable->replaceAllUsesWith(connectedVariable);
+                    variable->eraseFromParent();
+                } else if (port->GetInitializerOverride()) {
+                    VCL::Type* type = VCL::Type::GetCanonicalType(inputNode->GetOutputs()[0]->GetType());
+                    std::shared_ptr<VCL::CompilerInstance> instance = codegen.GetGraphContext().GetCompilerContext().CreateInstance();
+                    instance->CreateASTContext();
+                    instance->CreateExportSymbolTable();
+                    instance->CreateImportModuleTable();
+                    instance->CreateDefineTable();
+                    VCL::CodeGenModule cgm{
+                        codegen.GetLLVMModule(), 
+                        instance->GetASTContext(), 
+                        instance->GetCompilerContext().GetDiagnosticReporter(),
+                        instance->GetCompilerContext().GetTarget(),
+                        instance->GetImportModuleTable(),
+                        instance->GetCompilerContext().GetAttributeTable(),
+                        instance->GetCompilerContext().GetIdentifierTable() };
+                    llvm::Constant* value = cgm.GenerateConstantValue(port->GetInitializerOverride());
+                    uint32_t s = codegen.GetGraphContext().GetCompilerContext().GetTarget().GetVectorWidthInElement();
+                    if (type->GetTypeClass() == VCL::Type::VectorTypeClass)
+                        value = llvm::ConstantDataVector::getSplat(s, value);
+                    if (type->GetTypeClass() == VCL::Type::LanesTypeClass) {
+                        llvm::ArrayType* arrayType = llvm::ArrayType::get(value->getType(), s);
+                        llvm::SmallVector<llvm::Constant*> elems{};
+                        elems.assign(s, value);
+                        value = llvm::ConstantArray::get(arrayType, elems);
+                    }
+                    variable->setInitializer(value);
+                }
             }
         }
     }
@@ -217,4 +267,154 @@ void VCLG::SubgraphNode::Update() {
 
     for (Identity& identity : toRemove)
         nodeToPort.erase(identity);
+}
+
+void VCLG::FeedbackInputNode::Initialize() {
+    AddFlag(NodeFlag::IsOutputNode);
+    AddFlag(NodeFlag::IsDependent);
+    VCL::ASTContext& context = owner.GetGraphContext().GetGlobalASTContext();
+    VCL::IdentifierTable& identifierTable = owner.GetGraphContext().GetCompilerContext().GetIdentifierTable();
+    VCL::Type* type = context.GetTypeCache().GetOrCreateBuiltinType(VCL::BuiltinType::Float32);
+    VCL::TypeAliasDecl* aliasDecl = VCL::TypeAliasDecl::Create(context, identifierTable.Get("Generic"), type, VCL::SourceRange{});
+    type = context.GetTypeCache().GetOrCreateTypeAliasType(type, aliasDecl);
+    aliasDecl->SetType(type);
+    Port* port = owner.InstantiatePort(GetIdentity(), type, "In", Port::PortKind::Input, nullptr, true);
+    GetSubstitutionTable().SetTypeSubstitution(aliasDecl, nullptr);
+    inPorts.push_back(port);
+}
+
+void VCLG::FeedbackInputNode::Destroy() {
+    owner.DestroyPort(inPorts[0]);
+}
+
+bool VCLG::FeedbackInputNode::Emit(CodeGenGraph& codegen) {
+    Port* inPort = GetInputs()[0];
+    llvm::GlobalVariable* variable = codegen.GetOutPortGlobalVar(inPort);
+    if (variable == nullptr)
+        return false;
+    Port* outPort = codegen.GetInPortToOutPort(inPort);
+    if (!outPort)
+        return false;
+    llvm::GlobalVariable* connectedVariable = codegen.GetOutPortGlobalVar(outPort);
+    if (connectedVariable == nullptr)
+        return false;
+    variable->setInitializer(connectedVariable->getInitializer());
+    variable->replaceAllUsesWith(connectedVariable);
+    variable->eraseFromParent();
+    return true;
+}
+
+VCL::Type* VCLG::FeedbackInputNode::GetType() {
+    Port* port = inPorts[0];
+    return port->GetSubstitutedType() ? port->GetSubstitutedType() : port->GetType();
+}
+
+void VCLG::FeedbackOutputNode::Initialize() {
+
+}
+
+void VCLG::FeedbackOutputNode::Destroy() {
+    for (Port* port : outPorts)
+        owner.DestroyPort(port);
+}
+
+bool VCLG::FeedbackOutputNode::Emit(CodeGenGraph& codegen) {
+    if (feedbackIdentity == INVALID_IDENTITY)
+        return false;
+    FeedbackInputNode* feedbackInputNode = (FeedbackInputNode*)owner.GetNodeByIdentity(feedbackIdentity);
+    Port* feedbackInPort = feedbackInputNode->GetInputs()[0];
+    llvm::GlobalVariable* variable = codegen.GetOutPortGlobalVar(feedbackInPort);
+    
+    if (variable == nullptr) {
+        std::shared_ptr<VCL::CompilerInstance> instance = codegen.GetGraphContext().GetCompilerContext().CreateInstance();
+        
+        instance->CreateASTContext();
+        instance->CreateExportSymbolTable();
+        instance->CreateImportModuleTable();
+        instance->CreateDefineTable();
+
+        VCL::Sema sema{ 
+            instance->GetCompilerContext(),
+            instance->GetASTContext(),
+            instance->GetCompilerContext().GetDiagnosticReporter(),
+            instance->GetCompilerContext().GetIdentifierTable(),
+            instance->GetCompilerContext().GetDirectiveRegistry(),
+            instance->GetExportSymbolTable(),
+            instance->GetImportModuleTable(),
+            instance->GetDefineTable() };
+        
+        VCL::IdentifierInfo* identifier = instance->GetCompilerContext().GetIdentifierTable().Get(feedbackInputNode->GetDisplayName());
+
+        VCL::VarDecl* varDecl = sema.ActOnVarDecl(feedbackInputNode->GetType(), identifier, VCL::VarDecl::VarAttrBitfield{ 0 }, nullptr, VCL::SourceRange{});
+        
+        VCL::CodeGenModule cgm{
+            codegen.GetLLVMModule(), 
+            instance->GetASTContext(), 
+            instance->GetCompilerContext().GetDiagnosticReporter(),
+            instance->GetCompilerContext().GetTarget(),
+            instance->GetImportModuleTable(),
+            instance->GetCompilerContext().GetAttributeTable(),
+            instance->GetCompilerContext().GetIdentifierTable() };
+        if (!cgm.EmitGlobalVarDecl(varDecl))
+            return false;
+
+        std::optional<std::string> mangledName = instance->GetMangledSymbolName(identifier->GetName());
+        if (!mangledName.has_value()) {
+            instance->GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+                .SetCompilerInfo(__FILE__, __func__, __LINE__)
+                .Report();
+            return false;
+        }
+
+        variable = codegen.GetLLVMModule().getGlobalVariable(mangledName.value(), true);
+        if (!variable) {
+            instance->GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+                .SetCompilerInfo(__FILE__, __func__, __LINE__)
+                .Report();
+            return false;
+        }
+        codegen.AddOutPortGlobalVar(feedbackInPort, variable);
+    }
+
+    codegen.AddOutPortGlobalVar(GetOutputs()[0], variable);
+    return true;
+}
+
+void VCLG::FeedbackOutputNode::Update(Identity feedbackIdentity) {
+    if (feedbackIdentity == INVALID_IDENTITY) {
+        for (Port* port : outPorts)
+            owner.DestroyPort(port);
+        outPorts.clear();
+        this->feedbackIdentity = feedbackIdentity;
+        return;
+    }
+
+    VCLG::Node* node = owner.GetNodeByIdentity(feedbackIdentity);
+    if (!node || node->GetNodeClass() != VCLG::Node::TransientNodeClass)
+        return;
+    VCLG::TransientNode* transientNode = (VCLG::TransientNode*)node;
+    if (transientNode->GetHash() != typeid(FeedbackInputNode).hash_code())
+        return;
+    VCLG::FeedbackInputNode* feedbackNode = (VCLG::FeedbackInputNode*)transientNode;
+
+    displayName = feedbackNode->GetDisplayName();
+    if (this->feedbackIdentity == feedbackNode->GetIdentity()) {
+        Port* port = GetOutputs()[0];
+        if (port->GetType() != feedbackNode->GetType()) {
+            owner.DestroyPort(port);
+            port = owner.InstantiatePort(
+                GetIdentity(), feedbackNode->GetType(), "Out", Port::PortKind::Output, nullptr, false);
+            outPorts.clear();
+            outPorts.push_back(port);
+        }
+    } else {
+        if (GetOutputs().size() != 0) {
+            owner.DestroyPort(GetOutputs()[0]);
+            outPorts.clear();
+        }
+        Port* port = owner.InstantiatePort(
+            GetIdentity(), feedbackNode->GetType(), "Out", Port::PortKind::Output, nullptr, false);
+        outPorts.push_back(port);
+        this->feedbackIdentity = feedbackNode->GetIdentity();
+    }
 }

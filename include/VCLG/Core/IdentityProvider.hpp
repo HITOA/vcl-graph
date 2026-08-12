@@ -4,7 +4,7 @@
 #include <atomic>
 
 
-#define INVALID_IDENTITY (Identity(0))
+#define INVALID_IDENTITY (VCLG::Identity(0))
 
 namespace VCLG {
     using Identity = uint32_t;

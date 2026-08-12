@@ -39,6 +39,8 @@ namespace VCLG {
         inline GraphContext& GetGraphContext() { return graphContext; }
         inline Identity GetIdentity() const { return identity; }
         inline GraphValidator& GetGraphValidator() { return validator; }
+        
+        inline bool Validate() { return validator.Validate(*this); }
 
         inline llvm::ArrayRef<Node*> GetNodes() const { return storage.GetNodes(); }
         inline llvm::ArrayRef<Connection> GetConnections() const { return connections; }
@@ -48,6 +50,7 @@ namespace VCLG {
         inline Parameter* GetParameterByIdentity(Identity identity) const { return storage.GetParameterByIdentity(identity); }
 
         Connection* FindConnectionByPort(Port* outPort, Port* inPort);
+        Connection* FindConnectionByIdentity(Identity identity);
 
         SourceNode* InstantiateSourceNode(VCL::Source* source);
 

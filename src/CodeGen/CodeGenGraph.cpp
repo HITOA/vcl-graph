@@ -68,6 +68,9 @@ bool VCLG::CodeGenGraph::LinkNow() {
 }
 
 bool VCLG::CodeGenGraph::Emit() {
+    if (!graph.Validate())
+        return false;
+
     entrypoint = std::make_unique<CodeGenEntrypoint>(*this, "Main");
     reset = std::make_unique<CodeGenEntrypoint>(*this, "Reset");
     entrypoint->Begin();

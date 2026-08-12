@@ -116,6 +116,8 @@ namespace VCLG {
         inline llvm::ArrayRef<Port*> GetInputs() const { return inPorts; }
         inline llvm::ArrayRef<Port*> GetOutputs() const { return outPorts; }
 
+        inline GraphInstance& GetOwner() { return owner; }
+
     protected:
         size_t hash;
         size_t size;

@@ -18,7 +18,7 @@ namespace VCLG {
         void Destroy() override;
         bool Emit(CodeGenGraph& codegen) override;
 
-        VCL::Type* GetType();
+        virtual VCL::Type* GetType();
 
         inline void SetDisplayName(const std::string& name) { displayName = name; }
     };
@@ -32,7 +32,7 @@ namespace VCLG {
         void Destroy() override;
         bool Emit(CodeGenGraph& codegen) override;
 
-        inline VCL::Type* GetType() const { return type; }
+        virtual VCL::Type* GetType();
 
         inline void SetDisplayName(const std::string& name) { displayName = name; }
     
@@ -58,6 +58,36 @@ namespace VCLG {
     protected:
         std::shared_ptr<GraphInstance> instance;
         IdentityMap nodeToPort;
+    };
+
+    class FeedbackInputNode : public TransientNode {
+    public:
+        FeedbackInputNode(size_t hash, size_t size, GraphInstance& owner, Identity identity) : 
+                TransientNode{ hash, size, owner, "New Feedback Input", identity } {}
+
+        void Initialize() override;
+        void Destroy() override;
+        bool Emit(CodeGenGraph& codegen) override;
+
+        virtual VCL::Type* GetType();
+
+        inline void SetDisplayName(const std::string& name) { displayName = name; }
+    };
+
+    class FeedbackOutputNode : public TransientNode {
+    public:
+        FeedbackOutputNode(size_t hash, size_t size, GraphInstance& owner, Identity identity) :
+            feedbackIdentity{ INVALID_IDENTITY }, TransientNode{ hash, size, owner, "Feedback Output", identity } {}
+        
+        void Initialize() override;
+        void Destroy() override;
+        bool Emit(CodeGenGraph& codegen) override;
+        void Update(Identity feedbackIdentity);
+
+        inline Identity GetFeedbackIdentity() const { return feedbackIdentity; }
+
+    private:
+        Identity feedbackIdentity;
     };
 
 }

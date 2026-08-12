@@ -34,6 +34,15 @@ VCLG::Connection* VCLG::GraphInstance::FindConnectionByPort(Port* outPort, Port*
     return nullptr;
 }
 
+VCLG::Connection* VCLG::GraphInstance::FindConnectionByIdentity(Identity identity) {
+    for (int i = 0; i < connections.size(); ++i) {
+        Connection& conn = connections[i];
+        if (conn.GetIdentity() == identity)
+            return &conn;
+    }
+    return nullptr;
+}
+
 VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source) {
     SourceNodeDefinition* definition = graphContext.GetDefinitionRegistry().GetOrCreateSourceNodeDefinition(source);
     if (!definition)
