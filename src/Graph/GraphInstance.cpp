@@ -148,6 +148,22 @@ void VCLG::GraphInstance::DestroyPort(Port* port) {
     allocator->Deallocate(port, portTotalSize);
 }
 
+VCLG::Port* VCLG::GraphInstance::OverwritePort(Port* port, Identity owner, VCL::Type* type, const std::string& displayName, 
+        Port::PortKind kind, VCL::ConstantValue* initializer, bool isDependent) {
+    size_t portAdditionalDataSize = userDataTailAllocator->GetPortUserDataAdditionalSize();
+    size_t portTotalSize = sizeof(Port) + portAdditionalDataSize;
+
+    Identity instancedPortIdentity = port->GetIdentity();
+    DestroyPort(port);
+    Port* newPort = (Port*)allocator->Allocate(portTotalSize, 8);
+    new (newPort) Port{ owner, type, displayName, kind, initializer, isDependent, instancedPortIdentity };
+    void* ptr = ((uint8_t*)newPort) + sizeof(Port);
+    userDataTailAllocator->ConstructPortUserData(newPort, ptr);
+    storage.AddPort(newPort);
+
+    return port;
+}
+
 VCLG::Parameter* VCLG::GraphInstance::InstantiateParameter(Identity owner, VCL::Type* type, const std::string& displayName, VCL::ConstantValue* initializer) {
     size_t parameterAdditionalDataSize = userDataTailAllocator->GetParameterUserDataAdditionalSize();
     size_t parameterTotalSize = sizeof(Parameter) + parameterAdditionalDataSize;

@@ -401,20 +401,19 @@ void VCLG::FeedbackOutputNode::Update(Identity feedbackIdentity) {
     if (this->feedbackIdentity == feedbackNode->GetIdentity()) {
         Port* port = GetOutputs()[0];
         if (port->GetType() != feedbackNode->GetType()) {
-            owner.DestroyPort(port);
-            port = owner.InstantiatePort(
-                GetIdentity(), feedbackNode->GetType(), "Out", Port::PortKind::Output, nullptr, false);
-            outPorts.clear();
-            outPorts.push_back(port);
+            outPorts[0] = owner.OverwritePort(
+                port, GetIdentity(), feedbackNode->GetType(), "Out", Port::PortKind::Output, nullptr, false);
         }
     } else {
-        if (GetOutputs().size() != 0) {
-            owner.DestroyPort(GetOutputs()[0]);
-            outPorts.clear();
+        if (!GetOutputs().empty()) {
+            Port* port = GetOutputs()[0];
+            outPorts[0] = owner.OverwritePort(
+                    port, GetIdentity(), feedbackNode->GetType(), "Out", Port::PortKind::Output, nullptr, false);
+        } else {
+            Port* port = owner.InstantiatePort(
+                GetIdentity(), feedbackNode->GetType(), "Out", Port::PortKind::Output, nullptr, false);
+            outPorts.push_back(port);
+            this->feedbackIdentity = feedbackNode->GetIdentity();
         }
-        Port* port = owner.InstantiatePort(
-            GetIdentity(), feedbackNode->GetType(), "Out", Port::PortKind::Output, nullptr, false);
-        outPorts.push_back(port);
-        this->feedbackIdentity = feedbackNode->GetIdentity();
     }
 }

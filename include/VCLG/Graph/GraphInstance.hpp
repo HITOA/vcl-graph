@@ -71,6 +71,8 @@ namespace VCLG {
         Port* InstantiatePort(Identity owner, VCL::Type* type, const std::string& displayName, 
             Port::PortKind kind, VCL::ConstantValue* initializer, bool isDependent);
         void DestroyPort(Port* port);
+        Port* OverwritePort(Port* port, Identity owner, VCL::Type* type, const std::string& displayName, 
+            Port::PortKind kind, VCL::ConstantValue* initializer, bool isDependent);
 
         Parameter* InstantiateParameter(Identity owner, VCL::Type* type, const std::string& displayName, VCL::ConstantValue* initializer);
         void DestroyParameter(Parameter* parameter);
