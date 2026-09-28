@@ -1,6 +1,7 @@
 #include <VCLG/Graph/Definition.hpp>
 
 #include <VCLG/Graph/Directives.hpp>
+#include <VCLG/Core/Diagnostics.hpp>
 
 #include <VCL/Core/Diagnostic.hpp>
 #include <VCL/Core/Format.hpp>
@@ -172,10 +173,10 @@ VCLG::SourcePortDefinition* VCLG::DefinitionRegistry::CreateSourcePortDefinition
     bool isInput = false;
 
     if (VCL::AttributeInstance* attribute = varDecl->HasAttribute(inputAttributeDefinition); attribute != nullptr) {
-        displayName = GetStringAttribute(attribute);
+        displayName = GetStringAttribute(attribute, varDecl).value_or(name);
         isInput = true;
     } else if (VCL::AttributeInstance* attribute = varDecl->HasAttribute(outputAttributeDefinition); attribute != nullptr) {
-        displayName = GetStringAttribute(attribute);
+        displayName = GetStringAttribute(attribute, varDecl).value_or(name);
         isInput = false;
     }
 
@@ -192,7 +193,7 @@ VCLG::SourceParameterDefinition* VCLG::DefinitionRegistry::CreateSourceParameter
     std::string displayName = name;
 
     if (VCL::AttributeInstance* attribute = varDecl->HasAttribute(parameterAttributeDefinition); attribute != nullptr) {
-        displayName = GetStringAttribute(attribute);
+        displayName = GetStringAttribute(attribute, varDecl).value_or(name);
     }
 
     SourceParameterDefinition* definition = (SourceParameterDefinition*)allocator->Allocate(sizeof(SourceParameterDefinition), 8);
@@ -207,19 +208,17 @@ VCLG::SourceAutoParameterDefinition* VCLG::DefinitionRegistry::CreateSourceAutoP
     return definition;
 }
 
-std::string VCLG::DefinitionRegistry::GetStringAttribute(VCL::AttributeInstance* attribute) {
-    if (attribute->GetArgsCount() != 1) {
-        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-            .SetCompilerInfo(__FILE__, __func__, __LINE__)
-            .Report();
-        return std::string{};
-    }
+std::optional<std::string> VCLG::DefinitionRegistry::GetStringAttribute(VCL::AttributeInstance* attribute, VCL::Decl* decl) {
+    // The parser already enforces the argument count registered in the constructor.
+    if (!VCLG_CHECK(cc.GetDiagnosticReporter(), attribute->GetArgsCount() == 1))
+        return std::nullopt;
     VCL::ConstantValue* arg = attribute->GetArgs()[0];
     if (arg->GetConstantValueClass() != VCL::ConstantValue::ConstantStringClass) {
-        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::NodeDefinitionError,
+                "[" + attribute->GetDefinition()->GetIdentifierInfo()->GetName().str() + "] expects a string argument")
+            .AddHint(VCL::DiagnosticHint{ decl->GetSourceRange() })
             .Report();
-        return std::string{};
+        return std::nullopt;
     }
     return VCL::ParseStringLiteral(((VCL::ConstantString*)arg)->GetString());
 }

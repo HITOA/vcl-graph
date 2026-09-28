@@ -6,6 +6,7 @@
 #include <VCLG/Graph/GraphInstance.hpp>
 #include <VCLG/Graph/BuiltinNodes.hpp>
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
+#include <VCLG/Core/Diagnostics.hpp>
 
 #include <VCL/Core/SourceManager.hpp>
 #include <VCL/Core/Diagnostic.hpp>
@@ -22,22 +23,32 @@
 
 namespace Test {
 
-    // Keeps error messages instead of printing them, so tests can check what was reported.
+    // Keeps error messages instead of printing them, so tests can check what was reported, and
+    // the graph path of the node each error was attributed to (empty outside any node).
     class RecordingDiagnosticConsumer : public VCL::TextDiagnosticConsumer {
     public:
         void HandleTextDiagnostic(VCL::Diagnostic&& diagnostic, const std::string& message) override {
-            if (diagnostic.GetSeverity() == VCL::Diagnostic::SeverityLevel::Error)
-                errors.push_back(message);
+            if (diagnostic.GetSeverity() != VCL::Diagnostic::SeverityLevel::Error)
+                return;
+            const VCLG::NodeDiagnosticScope* scope = VCLG::NodeDiagnosticScope::Current();
+            errors.push_back(message);
+            errorPaths.push_back(scope ? scope->GetPath() : std::string{});
         }
 
         inline bool HasError(const std::string& text) const {
-            for (const std::string& error : errors)
-                if (error.find(text) != std::string::npos)
-                    return true;
-            return false;
+            return FindError(text) != nullptr;
+        }
+
+        // Graph path of the first error containing `text`, or nullptr if there is none.
+        inline const std::string* FindError(const std::string& text) const {
+            for (size_t i = 0; i < errors.size(); ++i)
+                if (errors[i].find(text) != std::string::npos)
+                    return &errorPaths[i];
+            return nullptr;
         }
 
         std::vector<std::string> errors{};
+        std::vector<std::string> errorPaths{};
     };
 
     // A compiled graph, ready to run. Globals are looked up by their mangled name, which is the

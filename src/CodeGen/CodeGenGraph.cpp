@@ -5,6 +5,7 @@
 #include <VCLG/AST/ASTParameterWriter.hpp>
 #include <VCLG/AST/ASTAutoParameterSubstitution.hpp>
 #include <VCLG/AST/ASTPortTypeOverrideWriter.hpp>
+#include <VCLG/Core/Diagnostics.hpp>
 
 #include <VCL/Core/SourceManager.hpp>
 #include <VCL/Frontend/CompilerInstance.hpp>
@@ -20,6 +21,7 @@
 #include <llvm/Linker/Linker.h>
 #include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include <queue>
 #include <unordered_set>
@@ -52,15 +54,19 @@ bool VCLG::CodeGenGraph::LinkNow() {
             return llvm::CloneModule(module);
         });
         if (linker.linkInModule(std::move(clonedModule))) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::CustomDiagnostic,
+                    "failed to link imported module `" + mod.first->GetName().str() + "`")
                 .SetCompilerInfo(__FILE__, __func__, __LINE__)
                 .Report();
             return false;
         }
     }
 
-    if (llvm::verifyModule(module, &llvm::errs())) {
-        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+    std::string verifierOutput{};
+    llvm::raw_string_ostream verifierStream{ verifierOutput };
+    if (llvm::verifyModule(module, &verifierStream)) {
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::CustomDiagnostic,
+                "generated graph code is invalid (LLVM verifier): " + verifierStream.str())
             .SetCompilerInfo(__FILE__, __func__, __LINE__)
             .Report();
         return false;
@@ -70,8 +76,12 @@ bool VCLG::CodeGenGraph::LinkNow() {
 }
 
 bool VCLG::CodeGenGraph::Emit() {
-    if (!graph.Validate())
+    if (!graph.Validate()) {
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::CustomDiagnostic, "the graph's port types can't be resolved")
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
         return false;
+    }
 
     entrypoint = std::make_unique<CodeGenEntrypoint>(*this, "Main");
     reset = std::make_unique<CodeGenEntrypoint>(*this, "Reset");
@@ -81,13 +91,16 @@ bool VCLG::CodeGenGraph::Emit() {
     BuildPortMap();
     std::vector<Node*> nodes{};
     if (!BuildOrderedNodeList(nodes)) {
-        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::CustomDiagnostic, "the graph contains a cycle")
             .SetCompilerInfo(__FILE__, __func__, __LINE__)
             .Report();
         return false;
     }
 
     for (Node* node : nodes) {
+        // Everything reported while emitting `node` (parse, Sema, codegen, converters, nested
+        // subgraphs) is attributed to it.
+        NodeDiagnosticScope diagnosticScope{ GetNodeManglingPrefix(node), node->GetDisplayName().str() };
         if (SourceNode* sourceNode = llvm::dyn_cast<SourceNode>(node)) {
             if (!EmitSourceNode(sourceNode))
                 return false;
@@ -176,13 +189,11 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
 
         SourcePortDefinition* inPortDefinition = nodeDefinition->GetPorts()[i];
         std::optional<std::string> mangledName = instance->GetMangledSymbolName(inPortDefinition->GetName());
-        if (!mangledName.has_value()) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
+        if (!VCLG_CHECK(cc.GetDiagnosticReporter(), mangledName.has_value()))
             return false;
-        }
         llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value(), true);
+        if (!VCLG_CHECK(cc.GetDiagnosticReporter(), variable != nullptr))
+            return false;
 
         if (!inPortToOutPort.count(inPort)) {
             if (inPort->GetInitializerOverride() != nullptr) {
@@ -196,28 +207,13 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         }
 
         Port* connectedPort = inPortToOutPort[inPort];
-        if (!outPortGlobalVar.count(connectedPort)) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
+        if (!VCLG_CHECK(cc.GetDiagnosticReporter(), outPortGlobalVar.count(connectedPort) != 0))
             return false;
-        }
         llvm::GlobalVariable* connectedVariable = outPortGlobalVar[connectedPort];
 
-        if (!variable) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
-            return false;
-        }
-
         Connection* conn = graph.FindConnectionByPort(connectedPort, inPort);
-        if (!conn) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
+        if (!VCLG_CHECK(cc.GetDiagnosticReporter(), conn != nullptr))
             return false;
-        }
 
         if (conn->GetConverter() == nullptr) {
             variable->setInitializer(connectedVariable->getInitializer());
@@ -233,54 +229,30 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
         Port* outPort = node->GetOutputs()[i];
         SourcePortDefinition* outPortDefinition = nodeDefinition->GetPorts()[i + node->GetInputs().size()];
         std::optional<std::string> mangledName = instance->GetMangledSymbolName(outPortDefinition->GetName());
-        if (!mangledName.has_value()) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
+        if (!VCLG_CHECK(cc.GetDiagnosticReporter(), mangledName.has_value()))
             return false;
-        }
 
         llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value(), true);
-        if (!variable) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
+        if (!VCLG_CHECK(cc.GetDiagnosticReporter(), variable != nullptr))
             return false;
-        }
         outPortGlobalVar.insert({ outPort, variable });
     }
 
     // Add node process function to the entrypoint
     std::optional<std::string> mangledEntrypointName = instance->GetMangledSymbolName(nodeDefinition->GetEntrypoint()->GetIdentifierInfo()->GetName());
-    if (!mangledEntrypointName.has_value()) {
-        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-            .SetCompilerInfo(__FILE__, __func__, __LINE__)
-            .Report();
+    if (!VCLG_CHECK(cc.GetDiagnosticReporter(), mangledEntrypointName.has_value()))
         return false;
-    }
     llvm::Function* processFunction = module.getFunction(mangledEntrypointName.value());
-    if (!processFunction) {
-        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-            .SetCompilerInfo(__FILE__, __func__, __LINE__)
-            .Report();
+    if (!VCLG_CHECK(cc.GetDiagnosticReporter(), processFunction != nullptr))
         return false;
-    }
 
     if (nodeDefinition->GetReset() != nullptr) {
         std::optional<std::string> mangledResetEntrypointName = instance->GetMangledSymbolName(nodeDefinition->GetReset()->GetIdentifierInfo()->GetName());
-        if (!mangledResetEntrypointName.has_value()) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
+        if (!VCLG_CHECK(cc.GetDiagnosticReporter(), mangledResetEntrypointName.has_value()))
             return false;
-        }
         llvm::Function* resetFunction = module.getFunction(mangledResetEntrypointName.value());
-        if (!resetFunction) {
-            cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
+        if (!VCLG_CHECK(cc.GetDiagnosticReporter(), resetFunction != nullptr))
             return false;
-        }
 
         if (!reset->AddNodeEntrypoint(resetFunction))
             return false;

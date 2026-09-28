@@ -11,6 +11,8 @@
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/TrailingObjects.h>
 
+#include <optional>
+
 
 namespace VCLG {
     
@@ -175,7 +177,8 @@ namespace VCLG {
         void DestroyDefinitions(llvm::ArrayRef<SourcePortDefinition*> ports, llvm::ArrayRef<SourceParameterDefinition*> parameters,
             llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters);
 
-        std::string GetStringAttribute(VCL::AttributeInstance* attribute);
+        /** The attribute's string argument; reports an error on `decl` and returns nullopt if it isn't a string. */
+        std::optional<std::string> GetStringAttribute(VCL::AttributeInstance* attribute, VCL::Decl* decl);
         std::string GetStringDefine(std::shared_ptr<VCL::CompilerInstance> instance, llvm::StringRef name);
 
         bool HasFlagDefined(std::shared_ptr<VCL::CompilerInstance> instance, llvm::StringRef name);

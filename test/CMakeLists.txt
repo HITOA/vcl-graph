@@ -4,6 +4,7 @@ project(vclg_test)
 find_package(Catch2 3 REQUIRED)
 
 add_executable(vclg_test
+    Graph/Diagnostics.cpp
     Graph/Editing.cpp
     Graph/Execution.cpp
     Graph/Inference.cpp

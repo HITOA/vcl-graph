@@ -27,6 +27,7 @@ add_library(vclg STATIC
     src/CodeGen/CodeGenEntrypoint.cpp
     src/CodeGen/CodeGenGraph.cpp
     src/CodeGen/Optimizer.cpp
+    src/Core/Diagnostics.cpp
     src/Core/SubstitutionTable.cpp
     src/Core/TLSFAllocator.cpp
     src/Graph/BuiltinNodes.cpp

@@ -2,6 +2,7 @@
 
 #include <VCLG/Graph/GraphInstance.hpp>
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
+#include <VCLG/Core/Diagnostics.hpp>
 
 #include <VCL/AST/Decl.hpp>
 #include <VCL/Sema/Sema.hpp>
@@ -9,6 +10,14 @@
 
 #include <unordered_set>
 
+
+// A mistake in the graph the user can fix. The node itself is identified by the NodeDiagnosticScope
+// CodeGenGraph opens around it.
+static bool ReportGraphError(VCLG::CodeGenGraph& codegen, const std::string& message) {
+    codegen.GetGraphContext().GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::CustomDiagnostic, message)
+        .Report();
+    return false;
+}
 
 void VCLG::SubgraphOutputNode::Initialize() {
     AddFlag(NodeFlag::IsOutputNode);
@@ -32,8 +41,11 @@ bool VCLG::SubgraphOutputNode::Emit(CodeGenGraph& codegen) {
     Port* inPort = GetInputs()[0];
     Port* outPort = codegen.GetInPortToOutPort(inPort);
     if (!outPort)
+        return ReportGraphError(codegen, "subgraph output is not connected");
+    llvm::GlobalVariable* variable = codegen.GetOutPortGlobalVar(outPort);
+    if (!VCLG_CHECK(codegen.GetGraphContext().GetCompilerContext().GetDiagnosticReporter(), variable != nullptr))
         return false;
-    codegen.AddOutPortGlobalVar(inPort, codegen.GetOutPortGlobalVar(outPort));
+    codegen.AddOutPortGlobalVar(inPort, variable);
     return true;
 }
 
@@ -89,20 +101,12 @@ bool VCLG::SubgraphInputNode::Emit(CodeGenGraph& codegen) {
 
     Port* outPort = GetOutputs()[0];
     std::optional<std::string> mangledName = instance->GetMangledSymbolName(identifier->GetName());
-    if (!mangledName.has_value()) {
-        instance->GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-            .SetCompilerInfo(__FILE__, __func__, __LINE__)
-            .Report();
+    if (!VCLG_CHECK(instance->GetCompilerContext().GetDiagnosticReporter(), mangledName.has_value()))
         return false;
-    }
 
     llvm::GlobalVariable* variable = codegen.GetLLVMModule().getGlobalVariable(mangledName.value(), true);
-    if (!variable) {
-        instance->GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-            .SetCompilerInfo(__FILE__, __func__, __LINE__)
-            .Report();
+    if (!VCLG_CHECK(instance->GetCompilerContext().GetDiagnosticReporter(), variable != nullptr))
         return false;
-    }
 
     codegen.AddOutPortGlobalVar(outPort, variable);
     return true;
@@ -278,14 +282,15 @@ void VCLG::FeedbackInputNode::Destroy() {
 
 bool VCLG::FeedbackInputNode::Emit(CodeGenGraph& codegen) {
     Port* inPort = GetInputs()[0];
+    // Declared by the FeedbackOutputNode(s) reading this feedback, which the execution order emits first.
     llvm::GlobalVariable* variable = codegen.GetOutPortGlobalVar(inPort);
     if (variable == nullptr)
-        return false;
+        return ReportGraphError(codegen, "feedback is never read: no feedback output is linked to it");
     Port* outPort = codegen.GetInPortToOutPort(inPort);
     if (!outPort)
-        return false;
+        return ReportGraphError(codegen, "feedback input is not connected");
     llvm::GlobalVariable* connectedVariable = codegen.GetOutPortGlobalVar(outPort);
-    if (connectedVariable == nullptr)
+    if (!VCLG_CHECK(codegen.GetGraphContext().GetCompilerContext().GetDiagnosticReporter(), connectedVariable != nullptr))
         return false;
     variable->setInitializer(connectedVariable->getInitializer());
     variable->replaceAllUsesWith(connectedVariable);
@@ -309,7 +314,7 @@ void VCLG::FeedbackOutputNode::Destroy() {
 
 bool VCLG::FeedbackOutputNode::Emit(CodeGenGraph& codegen) {
     if (feedbackIdentity == INVALID_IDENTITY)
-        return false;
+        return ReportGraphError(codegen, "feedback output is not linked to a feedback input");
     FeedbackInputNode* feedbackInputNode = (FeedbackInputNode*)owner.GetNodeByIdentity(feedbackIdentity);
     Port* feedbackInPort = feedbackInputNode->GetInputs()[0];
     llvm::GlobalVariable* variable = codegen.GetOutPortGlobalVar(feedbackInPort);
@@ -349,20 +354,12 @@ bool VCLG::FeedbackOutputNode::Emit(CodeGenGraph& codegen) {
             return false;
 
         std::optional<std::string> mangledName = instance->GetMangledSymbolName(identifier->GetName());
-        if (!mangledName.has_value()) {
-            instance->GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
+        if (!VCLG_CHECK(instance->GetCompilerContext().GetDiagnosticReporter(), mangledName.has_value()))
             return false;
-        }
 
         variable = codegen.GetLLVMModule().getGlobalVariable(mangledName.value(), true);
-        if (!variable) {
-            instance->GetCompilerContext().GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                .Report();
+        if (!VCLG_CHECK(instance->GetCompilerContext().GetDiagnosticReporter(), variable != nullptr))
             return false;
-        }
         codegen.AddOutPortGlobalVar(feedbackInPort, variable);
     }
 
