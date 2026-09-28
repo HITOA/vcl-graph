@@ -4,7 +4,7 @@
 
 #include <VCLG/Graph/GraphContext.hpp>
 #include <VCLG/Graph/GraphInstance.hpp>
-#include <VCLG/Graph/TransientNodes.hpp>
+#include <VCLG/Graph/BuiltinNodes.hpp>
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
 
 #include <VCL/Core/SourceManager.hpp>
@@ -38,16 +38,6 @@ namespace Test {
         }
 
         std::vector<std::string> errors{};
-    };
-
-    // A subgraph input carrying a float32 (vcl-graph's SubgraphInputNode has no type of its own;
-    // Grog's subclasses set it the same way).
-    class FloatSubgraphInputNode : public VCLG::SubgraphInputNode {
-    public:
-        FloatSubgraphInputNode(size_t hash, size_t size, VCLG::GraphInstance& owner, VCLG::Identity identity) :
-                VCLG::SubgraphInputNode{ typeid(VCLG::SubgraphInputNode).hash_code(), size, owner, identity } {
-            type = owner.GetGraphContext().GetGlobalASTContext().GetTypeCache().GetOrCreateBuiltinType(VCL::BuiltinType::Float32);
-        }
     };
 
     // A compiled graph, ready to run. Globals are looked up by their mangled name, which is the

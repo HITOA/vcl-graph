@@ -116,12 +116,12 @@ TEST_CASE_METHOD(Test::GraphTest, "A node without [NodeProcess] is reported", "[
 TEST_CASE_METHOD(Test::GraphTest, "Feedback Output keeps a live port when retargeted", "[Graph][Editing][Regression]") {
     // OverwritePort used to return the port it had just destroyed.
     auto graph = context.CreateInstance();
-    auto* scalarLoop = graph->InstantiateTransientNode<VCLG::FeedbackInputNode>();
-    auto* arrayLoop = graph->InstantiateTransientNode<VCLG::FeedbackInputNode>();
+    auto* scalarLoop = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
+    auto* arrayLoop = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
     auto* source = AddNode(*graph, "ArraySource");
     REQUIRE(Connect(*graph, source->GetOutputs()[0], arrayLoop->GetInputs()[0]) != INVALID_IDENTITY);
 
-    auto* reader = graph->InstantiateTransientNode<VCLG::FeedbackOutputNode>();
+    auto* reader = graph->InstantiateBuiltinNode<VCLG::FeedbackOutputNode>();
     reader->Update(scalarLoop->GetIdentity());
     REQUIRE(reader->GetOutputs().size() == 1);
 

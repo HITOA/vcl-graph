@@ -20,8 +20,23 @@ endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/vcl)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/tlsf)
 
-file(GLOB_RECURSE vclg_source_files "src/*.*")
-add_library(vclg STATIC ${vclg_source_files})
+add_library(vclg STATIC
+    src/AST/ASTAutoParameterSubstitution.cpp
+    src/AST/ASTParameterWriter.cpp
+    src/AST/ASTPortTypeOverrideWriter.cpp
+    src/CodeGen/CodeGenEntrypoint.cpp
+    src/CodeGen/CodeGenGraph.cpp
+    src/CodeGen/Optimizer.cpp
+    src/Core/SubstitutionTable.cpp
+    src/Core/TLSFAllocator.cpp
+    src/Graph/BuiltinNodes.cpp
+    src/Graph/Definition.cpp
+    src/Graph/Directives.cpp
+    src/Graph/GraphContext.cpp
+    src/Graph/GraphInstance.cpp
+    src/Graph/GraphValidator.cpp
+    src/Graph/Node.cpp
+)
 target_include_directories(vclg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 

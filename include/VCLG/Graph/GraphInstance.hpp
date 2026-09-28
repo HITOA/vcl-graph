@@ -55,12 +55,12 @@ namespace VCLG {
         SourceNode* InstantiateSourceNode(VCL::Source* source);
 
         template<typename T, typename... Args>
-        inline T* InstantiateTransientNode(Args&&... args) {
+        inline T* InstantiateBuiltinNode(Args&&... args) {
             size_t nodeAdditionalDataSize = userDataTailAllocator->GetNodeUserDataAdditionalSize();
             size_t nodeTotalSize = sizeof(T) + nodeAdditionalDataSize;
             Identity instancedNodeIdentity = identityProvider.Next();
             T* ptr = (T*)allocator->Allocate(nodeTotalSize, alignof(T));
-            new (ptr) T{ typeid(T).hash_code(), sizeof(T), *this, instancedNodeIdentity, std::forward<Args>(args)... };
+            new (ptr) T{ sizeof(T), *this, instancedNodeIdentity, std::forward<Args>(args)... };
             ptr->Initialize();
             void* userDataPtr = ((uint8_t*)ptr) + sizeof(T);
             userDataTailAllocator->ConstructNodeUserData(ptr, userDataPtr);
@@ -102,7 +102,7 @@ namespace VCLG {
     private:
         void DestroyNodeConnections(Node* node);
         void DestroySourceNode(SourceNode* node);
-        void DestroyTransientNode(TransientNode* node);
+        void DestroyBuiltinNode(BuiltinNode* node);
 
         Identity ConnectOutputToInput(Port* outPort, Port* inPort);
         Identity HasConnection(Port* outPort, Port* inPort);

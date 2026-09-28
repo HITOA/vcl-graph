@@ -7,7 +7,7 @@
 static std::shared_ptr<VCLG::GraphInstance> MakeCounterSubgraph(Test::GraphTest& test) {
     auto sub = test.context.CreateInstance();
     auto* counter = test.AddNode(*sub, "Counter");
-    auto* out = sub->InstantiateTransientNode<VCLG::SubgraphOutputNode>();
+    auto* out = sub->InstantiateBuiltinNode<VCLG::SubgraphOutputNode>();
     REQUIRE(sub->Connect(counter->GetOutputs()[0], out->GetInputs()[0]) != INVALID_IDENTITY);
     return sub;
 }
@@ -15,7 +15,7 @@ static std::shared_ptr<VCLG::GraphInstance> MakeCounterSubgraph(Test::GraphTest&
 // Uses `sub` twice in `root`, each use feeding its own output node.
 static void UseTwice(Test::GraphTest& test, VCLG::GraphInstance& root, std::shared_ptr<VCLG::GraphInstance> sub) {
     for (int i = 0; i < 2; ++i) {
-        auto* use = root.InstantiateTransientNode<VCLG::SubgraphNode>();
+        auto* use = root.InstantiateBuiltinNode<VCLG::SubgraphNode>();
         use->SetGraph(sub);
         auto* sink = test.AddNode(root, "Add");
         sink->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
@@ -56,12 +56,12 @@ TEST_CASE_METHOD(Test::GraphTest, "Nested uses of a subgraph have their own stat
     // `middle` uses the counter subgraph twice (summed); the root uses `middle` twice: 4 counters.
     auto counter = MakeCounterSubgraph(*this);
     auto middle = context.CreateInstance();
-    auto* first = middle->InstantiateTransientNode<VCLG::SubgraphNode>();
+    auto* first = middle->InstantiateBuiltinNode<VCLG::SubgraphNode>();
     first->SetGraph(counter);
-    auto* second = middle->InstantiateTransientNode<VCLG::SubgraphNode>();
+    auto* second = middle->InstantiateBuiltinNode<VCLG::SubgraphNode>();
     second->SetGraph(counter);
     auto* sum = AddNode(*middle, "Add");
-    auto* out = middle->InstantiateTransientNode<VCLG::SubgraphOutputNode>();
+    auto* out = middle->InstantiateBuiltinNode<VCLG::SubgraphOutputNode>();
     REQUIRE(middle->Connect(first->GetOutputs()[0], sum->GetInputs()[0]) != INVALID_IDENTITY);
     REQUIRE(middle->Connect(second->GetOutputs()[0], sum->GetInputs()[1]) != INVALID_IDENTITY);
     REQUIRE(middle->Connect(sum->GetOutputs()[0], out->GetInputs()[0]) != INVALID_IDENTITY);
@@ -78,9 +78,10 @@ TEST_CASE_METHOD(Test::GraphTest, "Nested uses of a subgraph have their own stat
 TEST_CASE_METHOD(Test::GraphTest, "Values flow into and out of a subgraph", "[Graph][Subgraph]") {
     // sub: in -> Add(+1) -> out.  root: 5 -> sub -> sink
     auto sub = context.CreateInstance();
-    auto* in = sub->InstantiateTransientNode<Test::FloatSubgraphInputNode>();
+    VCL::Type* float32 = context.GetGlobalASTContext().GetTypeCache().GetOrCreateBuiltinType(VCL::BuiltinType::Float32);
+    auto* in = sub->InstantiateBuiltinNode<VCLG::SubgraphInputNode>(float32);
     auto* add = AddNode(*sub, "Add");
-    auto* out = sub->InstantiateTransientNode<VCLG::SubgraphOutputNode>();
+    auto* out = sub->InstantiateBuiltinNode<VCLG::SubgraphOutputNode>();
     VCL::ConstantScalar one{ 1.0f };
     add->GetInputs()[1]->SetInitializerOverride(&one);
     REQUIRE(sub->Connect(in->GetOutputs()[0], add->GetInputs()[0]) != INVALID_IDENTITY);
@@ -90,7 +91,7 @@ TEST_CASE_METHOD(Test::GraphTest, "Values flow into and out of a subgraph", "[Gr
     auto* source = AddNode(*root, "Add");
     VCL::ConstantScalar five{ 5.0f };
     source->GetInputs()[0]->SetInitializerOverride(&five);
-    auto* use = root->InstantiateTransientNode<VCLG::SubgraphNode>();
+    auto* use = root->InstantiateBuiltinNode<VCLG::SubgraphNode>();
     use->SetGraph(sub);
     auto* sink = AddNode(*root, "Add");
     sink->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);

@@ -88,18 +88,11 @@ bool VCLG::CodeGenGraph::Emit() {
     }
 
     for (Node* node : nodes) {
-        switch (node->GetNodeClass()) {
-            case Node::SourceNodeClass:
-                if (!EmitSourceNode((SourceNode*)node))
-                    return false;
-                break;
-            case Node::TransientNodeClass:
-                if (!EmitTransientNode((TransientNode*)node))
-                    return false;
-                break;
-            default:
-                abort();
-                break;
+        if (SourceNode* sourceNode = llvm::dyn_cast<SourceNode>(node)) {
+            if (!EmitSourceNode(sourceNode))
+                return false;
+        } else if (!EmitBuiltinNode(llvm::cast<BuiltinNode>(node))) {
+            return false;
         }
     }
 
@@ -296,7 +289,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
     return entrypoint->AddNodeEntrypoint(processFunction);
 }
 
-bool VCLG::CodeGenGraph::EmitTransientNode(TransientNode* node) {
+bool VCLG::CodeGenGraph::EmitBuiltinNode(BuiltinNode* node) {
     return node->Emit(*this);
 }
 

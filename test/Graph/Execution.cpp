@@ -54,8 +54,8 @@ TEST_CASE_METHOD(Test::GraphTest, "Reset runs the nodes' [NodeReset]", "[Graph][
 TEST_CASE_METHOD(Test::GraphTest, "A feedback loop sees the previous run's value", "[Graph][Execution]") {
     // out = previous out + 1
     auto graph = context.CreateInstance();
-    auto* loopIn = graph->InstantiateTransientNode<VCLG::FeedbackInputNode>();
-    auto* loopOut = graph->InstantiateTransientNode<VCLG::FeedbackOutputNode>();
+    auto* loopIn = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
+    auto* loopOut = graph->InstantiateBuiltinNode<VCLG::FeedbackOutputNode>();
     loopOut->Update(loopIn->GetIdentity());
     auto* body = AddNode(*graph, "Add");
     body->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);

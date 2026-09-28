@@ -1,4 +1,4 @@
-#include <VCLG/Graph/TransientNodes.hpp>
+#include <VCLG/Graph/BuiltinNodes.hpp>
 
 #include <VCLG/Graph/GraphInstance.hpp>
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
@@ -125,13 +125,9 @@ void VCLG::SubgraphNode::Destroy() {
 
 bool VCLG::SubgraphNode::Emit(CodeGenGraph& codegen) {
     for (Node* node : instance->GetNodes()) {
-        if (node->GetNodeClass() != Node::TransientNodeClass)
-            continue;
-        TransientNode* transientNode = (TransientNode*)node;
-        if (transientNode->GetHash() == typeid(SubgraphInputNode).hash_code()) {
-            SubgraphInputNode* inputNode = (SubgraphInputNode*)transientNode;
-            if (nodeToPort.count(transientNode->GetIdentity())) {
-                Port* port = owner.GetPortByIdentity(nodeToPort.at(transientNode->GetIdentity()));
+        if (SubgraphInputNode* inputNode = llvm::dyn_cast<SubgraphInputNode>(node)) {
+            if (nodeToPort.count(inputNode->GetIdentity())) {
+                Port* port = owner.GetPortByIdentity(nodeToPort.at(inputNode->GetIdentity()));
                 if (port->GetOverrideType() != nullptr)
                     inputNode->GetOutputs()[0]->SetOverrideType(port->GetOverrideType());
             }
@@ -146,22 +142,17 @@ bool VCLG::SubgraphNode::Emit(CodeGenGraph& codegen) {
     codegen.ImportSubgraph(current);
 
     for (Node* node : instance->GetNodes()) {
-        if (node->GetNodeClass() != Node::TransientNodeClass)
-            continue;
-        TransientNode* transientNode = (TransientNode*)node;
-        if (transientNode->GetHash() == typeid(SubgraphOutputNode).hash_code()) {
-            SubgraphOutputNode* outputNode = (SubgraphOutputNode*)transientNode;
-            if (nodeToPort.count(transientNode->GetIdentity())) {
-                Port* port = owner.GetPortByIdentity(nodeToPort.at(transientNode->GetIdentity()));
+        if (SubgraphOutputNode* outputNode = llvm::dyn_cast<SubgraphOutputNode>(node)) {
+            if (nodeToPort.count(outputNode->GetIdentity())) {
+                Port* port = owner.GetPortByIdentity(nodeToPort.at(outputNode->GetIdentity()));
                 llvm::GlobalVariable* variable = current.GetOutPortGlobalVar(outputNode->GetInputs()[0]);
                 if (!variable)
                     continue;
                 codegen.AddOutPortGlobalVar(port, variable);
             }
-        } else if (transientNode->GetHash() == typeid(SubgraphInputNode).hash_code()) {
-            SubgraphInputNode* inputNode = (SubgraphInputNode*)transientNode;
-            if (nodeToPort.count(transientNode->GetIdentity())) {
-                Port* port = owner.GetPortByIdentity(nodeToPort.at(transientNode->GetIdentity()));
+        } else if (SubgraphInputNode* inputNode = llvm::dyn_cast<SubgraphInputNode>(node)) {
+            if (nodeToPort.count(inputNode->GetIdentity())) {
+                Port* port = owner.GetPortByIdentity(nodeToPort.at(inputNode->GetIdentity()));
                 llvm::GlobalVariable* variable = current.GetOutPortGlobalVar(inputNode->GetOutputs()[0]);
                 if (!variable)
                     continue;
@@ -220,41 +211,36 @@ void VCLG::SubgraphNode::Update() {
     std::unordered_set<Identity> visitedNode{};
 
     for (Node* node : instance->GetNodes()) {
-        if (node->GetNodeClass() != Node::TransientNodeClass)
-            continue;
-        TransientNode* transientNode = (TransientNode*)node;
-        if (transientNode->GetHash() == typeid(SubgraphOutputNode).hash_code()) {
-            SubgraphOutputNode* outputNode = (SubgraphOutputNode*)transientNode;
-            if (!nodeToPort.count(transientNode->GetIdentity())) {
+        if (SubgraphOutputNode* outputNode = llvm::dyn_cast<SubgraphOutputNode>(node)) {
+            if (!nodeToPort.count(outputNode->GetIdentity())) {
                 Port* port = owner.InstantiatePort(
                     GetIdentity(), outputNode->GetType(), outputNode->GetDisplayName().str(), Port::PortKind::Output, nullptr, false);
-                nodeToPort.insert({ transientNode->GetIdentity(), port->GetIdentity() });
+                nodeToPort.insert({ outputNode->GetIdentity(), port->GetIdentity() });
                 outPorts.push_back(port);
             } else {
-                Port* port = owner.GetPortByIdentity(nodeToPort.at(transientNode->GetIdentity()));
+                Port* port = owner.GetPortByIdentity(nodeToPort.at(outputNode->GetIdentity()));
                 if (port->GetType() != outputNode->GetType()) {
                     owner.DestroyPort(port);
                     port = owner.InstantiatePort(
                         GetIdentity(), outputNode->GetType(), outputNode->GetDisplayName().str(), Port::PortKind::Output, nullptr, false);
-                    nodeToPort[transientNode->GetIdentity()] = port->GetIdentity();
+                    nodeToPort[outputNode->GetIdentity()] = port->GetIdentity();
                 }
                 port->SetDisplayName(outputNode->GetDisplayName().str());
                 outPorts.push_back(port);
             }
-            visitedNode.insert(transientNode->GetIdentity());
-        } else if (transientNode->GetHash() == typeid(SubgraphInputNode).hash_code()) {
-            SubgraphInputNode* inputNode = (SubgraphInputNode*)transientNode;
-            if (!nodeToPort.count(transientNode->GetIdentity())) {
+            visitedNode.insert(outputNode->GetIdentity());
+        } else if (SubgraphInputNode* inputNode = llvm::dyn_cast<SubgraphInputNode>(node)) {
+            if (!nodeToPort.count(inputNode->GetIdentity())) {
                 Port* port = owner.InstantiatePort(
                     GetIdentity(), inputNode->GetType(), inputNode->GetDisplayName().str(), Port::PortKind::Input, nullptr, false);
-                nodeToPort.insert({ transientNode->GetIdentity(), port->GetIdentity() });
+                nodeToPort.insert({ inputNode->GetIdentity(), port->GetIdentity() });
                 inPorts.push_back(port);
             } else {
-                Port* port = owner.GetPortByIdentity(nodeToPort.at(transientNode->GetIdentity()));
+                Port* port = owner.GetPortByIdentity(nodeToPort.at(inputNode->GetIdentity()));
                 port->SetDisplayName(inputNode->GetDisplayName().str());
                 inPorts.push_back(port);
             }
-            visitedNode.insert(transientNode->GetIdentity());
+            visitedNode.insert(inputNode->GetIdentity());
         }
     }
 
@@ -394,12 +380,9 @@ void VCLG::FeedbackOutputNode::Update(Identity feedbackIdentity) {
     }
 
     VCLG::Node* node = owner.GetNodeByIdentity(feedbackIdentity);
-    if (!node || node->GetNodeClass() != VCLG::Node::TransientNodeClass)
+    VCLG::FeedbackInputNode* feedbackNode = llvm::dyn_cast_or_null<VCLG::FeedbackInputNode>(node);
+    if (!feedbackNode)
         return;
-    VCLG::TransientNode* transientNode = (VCLG::TransientNode*)node;
-    if (transientNode->GetHash() != typeid(FeedbackInputNode).hash_code())
-        return;
-    VCLG::FeedbackInputNode* feedbackNode = (VCLG::FeedbackInputNode*)transientNode;
 
     displayName = feedbackNode->GetDisplayName();
     if (this->feedbackIdentity == feedbackNode->GetIdentity()) {

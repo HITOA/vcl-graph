@@ -26,12 +26,12 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
     VCL::ASTContext& globalASTContext = graph.GetGraphContext().GetGlobalASTContext();
     
     for (Node* node : dependentNodes) {
-        for (Port* inPort : Node::GetNodeInputs(node)) {
+        for (Port* inPort : node->GetInputs()) {
             if (!inPort->IsDependent())
                 continue;
             inPort->SetTentativeType(nullptr);
         }
-        for (Port* outPort : Node::GetNodeOutputs(node)) {
+        for (Port* outPort : node->GetOutputs()) {
             if (!outPort->IsDependent())
                 continue;
             outPort->SetTentativeType(nullptr);
@@ -39,7 +39,7 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
     }
 
     for (Node* node : dependentNodes) {
-        for (Port* inPort : Node::GetNodeInputs(node)) {
+        for (Port* inPort : node->GetInputs()) {
             if (inPortToOutPort.count(inPort)) {
                 Port* outPort = inPortToOutPort[inPort];
                 if (graph.FindConnectionByPort(outPort, inPort)->GetConverter() != nullptr)
@@ -52,7 +52,7 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
                     return false;
             }
         }
-        for (Port* outPort : Node::GetNodeOutputs(node)) {
+        for (Port* outPort : node->GetOutputs()) {
             auto connectedInPorts = outPortToInPorts.find(outPort);
             if (connectedInPorts != outPortToInPorts.end()) {
                 for (Port* inPort : connectedInPorts->second) {
@@ -66,12 +66,12 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
             }
         }
 
-        for (Port* inPort : Node::GetNodeInputs(node)) {
+        for (Port* inPort : node->GetInputs()) {
             if (!inPort->IsDependent())
                 continue;
             inPort->SetTentativeType(GenerateSubstitutedType(globalASTContext, node, inPort->GetType()));
         }
-        for (Port* outPort : Node::GetNodeOutputs(node)) {
+        for (Port* outPort : node->GetOutputs()) {
             if (!outPort->IsDependent())
                 continue;
             outPort->SetTentativeType(GenerateSubstitutedType(globalASTContext, node, outPort->GetType()));
@@ -79,12 +79,12 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
     }
     
     for (Node* node : dependentNodes) {
-        for (Port* inPort : Node::GetNodeInputs(node)) {
+        for (Port* inPort : node->GetInputs()) {
             if (!inPort->IsDependent())
                 continue;
             inPort->SetSubstitutedType(inPort->GetTentativeType());
         }
-        for (Port* outPort : Node::GetNodeOutputs(node)) {
+        for (Port* outPort : node->GetOutputs()) {
             if (!outPort->IsDependent())
                 continue;
             outPort->SetSubstitutedType(outPort->GetTentativeType());

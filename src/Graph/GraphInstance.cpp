@@ -3,7 +3,7 @@
 #include <VCLG/Graph/GraphContext.hpp>
 #include <VCLG/Graph/Port.hpp>
 #include <VCLG/Graph/Parameter.hpp>
-#include <VCLG/Graph/TransientNodes.hpp>
+#include <VCLG/Graph/BuiltinNodes.hpp>
 
 #include <VCL/AST/ConstantValue.hpp>
 #include <VCL/AST/Expr.hpp>
@@ -98,7 +98,7 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
 
     SourceNode* node = (SourceNode*)allocator->Allocate(nodeTotalSize, 8);
     new (node) SourceNode{ 
-        source->GetBufferIdentifier().str(), definition->GetDisplayName(), 
+        source->GetBufferIdentifier().str(), definition->GetDisplayName().str(), 
         inPorts, outPorts, parameters, instancedNodeIdentity };
 
     for (SourceAutoParameterDefinition* autoParam : definition->GetAutoParameters()) {
@@ -197,17 +197,10 @@ void VCLG::GraphInstance::DestroyParameter(Parameter* parameter) {
 }
 
 void VCLG::GraphInstance::DestroyNode(Node* node) {
-    switch (node->GetNodeClass()) {
-        case Node::SourceNodeClass:
-            DestroySourceNode((SourceNode*)node);
-            break;
-        case Node::TransientNodeClass:
-            DestroyTransientNode((TransientNode*)node);
-            break;
-        default:
-            abort();
-            return;
-    }
+    if (SourceNode* sourceNode = llvm::dyn_cast<SourceNode>(node))
+        DestroySourceNode(sourceNode);
+    else
+        DestroyBuiltinNode(llvm::cast<BuiltinNode>(node));
 }
 
 void VCLG::GraphInstance::DestroyConnection(Identity identity) {
@@ -299,7 +292,7 @@ void VCLG::GraphInstance::DestroySourceNode(SourceNode* node) {
     allocator->Deallocate(node, nodeTotalSize);
 }
 
-void VCLG::GraphInstance::DestroyTransientNode(TransientNode* node) {
+void VCLG::GraphInstance::DestroyBuiltinNode(BuiltinNode* node) {
     size_t portAdditionalDataSize = userDataTailAllocator->GetPortUserDataAdditionalSize();
     size_t portTotalSize = sizeof(Port) + portAdditionalDataSize;
 
@@ -311,7 +304,7 @@ void VCLG::GraphInstance::DestroyTransientNode(TransientNode* node) {
     void* ptr = ((uint8_t*)node) + node->GetSize();
     userDataTailAllocator->DestroyNodeUserData(node, ptr);
     node->Destroy();
-    node->~TransientNode();
+    node->~BuiltinNode();
     allocator->Deallocate(node, nodeTotalSize);
 }
 
@@ -394,7 +387,7 @@ bool VCLG::GraphInstance::WouldCreateCycle(Port* outPort, Port* inPort) const {
     while (!toVisit.empty()) {
         Node* node = toVisit.back();
         toVisit.pop_back();
-        for (Port* nodeInPort : Node::GetNodeInputs(node)) {
+        for (Port* nodeInPort : node->GetInputs()) {
             auto it = inPortToSource.find(nodeInPort);
             if (it == inPortToSource.end())
                 continue;
@@ -420,12 +413,10 @@ bool VCLG::GraphInstance::BuildExecutionOrder(llvm::ArrayRef<Node*> roots, std::
     // Outputs have no inputs, so this ordering edge can never be part of a cycle.
     std::unordered_map<Identity, std::vector<Node*>> feedbackReaders{};
     for (Node* node : GetNodes()) {
-        if (node->GetNodeClass() != Node::TransientNodeClass)
+        FeedbackOutputNode* feedbackOutputNode = llvm::dyn_cast<FeedbackOutputNode>(node);
+        if (!feedbackOutputNode)
             continue;
-        TransientNode* transientNode = (TransientNode*)node;
-        if (transientNode->GetHash() != typeid(FeedbackOutputNode).hash_code())
-            continue;
-        Identity feedbackIdentity = ((FeedbackOutputNode*)transientNode)->GetFeedbackIdentity();
+        Identity feedbackIdentity = feedbackOutputNode->GetFeedbackIdentity();
         if (feedbackIdentity != INVALID_IDENTITY)
             feedbackReaders[feedbackIdentity].push_back(node);
     }
@@ -442,7 +433,7 @@ bool VCLG::GraphInstance::BuildExecutionOrder(llvm::ArrayRef<Node*> roots, std::
             return false;
         state = VisitState::InProgress;
 
-        for (Port* inPort : Node::GetNodeInputs(node)) {
+        for (Port* inPort : node->GetInputs()) {
             auto it = inPortToSource.find(inPort);
             if (it != inPortToSource.end() && !visit(it->second))
                 return false;

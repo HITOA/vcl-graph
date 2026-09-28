@@ -57,8 +57,8 @@ TEST_CASE_METHOD(Test::GraphTest, "Deep diamond chains stay fast", "[Graph][Orde
 
 TEST_CASE_METHOD(Test::GraphTest, "A Feedback Input runs after the Feedback Outputs reading it", "[Graph][Order]") {
     auto graph = context.CreateInstance();
-    auto* loopIn = graph->InstantiateTransientNode<VCLG::FeedbackInputNode>();
-    auto* loopOut = graph->InstantiateTransientNode<VCLG::FeedbackOutputNode>();
+    auto* loopIn = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
+    auto* loopOut = graph->InstantiateBuiltinNode<VCLG::FeedbackOutputNode>();
     loopOut->Update(loopIn->GetIdentity());
     auto* body = AddNode(*graph, "Add");
     auto* sink = AddNode(*graph, "Add");

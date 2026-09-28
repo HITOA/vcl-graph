@@ -44,7 +44,7 @@ TEST_CASE_METHOD(Test::GraphTest, "A templated node compiles for the inferred ty
 TEST_CASE_METHOD(Test::GraphTest, "A Feedback Input takes the type of what feeds it", "[Graph][Inference]") {
     auto graph = context.CreateInstance();
     auto* source = AddNode(*graph, "ArraySource");
-    auto* loopIn = graph->InstantiateTransientNode<VCLG::FeedbackInputNode>();
+    auto* loopIn = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
     REQUIRE(Connect(*graph, source->GetOutputs()[0], loopIn->GetInputs()[0]) != INVALID_IDENTITY);
     REQUIRE(VCL::Type::IsCanonicallyEqual(loopIn->GetType(), source->GetOutputs()[0]->GetType()));
 }

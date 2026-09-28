@@ -3,9 +3,15 @@ project(vclg_test)
 
 find_package(Catch2 3 REQUIRED)
 
-file(GLOB_RECURSE vclg_test_files "./*.cpp")
-
-add_executable(vclg_test ${vclg_test_files})
+add_executable(vclg_test
+    Graph/Editing.cpp
+    Graph/Execution.cpp
+    Graph/Inference.cpp
+    Graph/Lifetime.cpp
+    Graph/Mangling.cpp
+    Graph/Order.cpp
+    Graph/Subgraph.cpp
+)
 target_link_libraries(vclg_test PRIVATE vclg Catch2::Catch2WithMain)
 target_include_directories(vclg_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
