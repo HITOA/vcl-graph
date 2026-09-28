@@ -9,6 +9,14 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+option(VCLG_BUILD_TEST "Build vcl-graph tests." OFF)
+option(VCLG_SANITIZE "Build vcl-graph, vcl and the tests with AddressSanitizer and UndefinedBehaviorSanitizer." OFF)
+
+if (VCLG_SANITIZE)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/vcl)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/tlsf)
 
@@ -24,3 +32,7 @@ endif()
 target_link_libraries(vclg PUBLIC vcl tlsf)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/example)
+
+if (VCLG_BUILD_TEST)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
+endif()

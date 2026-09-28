@@ -98,7 +98,8 @@ namespace VCLG {
             VCL::FunctionDecl* reset, bool hasInstanceData, llvm::ArrayRef<SourcePortDefinition*> ports, llvm::ArrayRef<SourceParameterDefinition*> parameters,
             llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters) 
                 : instance{ instance }, displayName{ displayName }, entrypoint{ entrypoint }, reset{ reset }, hasInstanceData{ hasInstanceData }, 
-                    portCount{ ports.size() }, parameterCount{ parameters.size() }, autoParameterCount{ autoParameters.size() } {
+                    portCount{ ports.size() }, parameterCount{ parameters.size() }, autoParameterCount{ autoParameters.size() },
+                    flags{ (DefinitionNodeFlag)0 } {
             std::uninitialized_copy(ports.begin(), ports.end(), getTrailingObjects<SourcePortDefinition*>());
             std::uninitialized_copy(parameters.begin(), parameters.end(), getTrailingObjects<SourceParameterDefinition*>());
             std::uninitialized_copy(autoParameters.begin(), autoParameters.end(), getTrailingObjects<SourceAutoParameterDefinition*>());
