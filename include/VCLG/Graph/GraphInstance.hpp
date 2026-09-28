@@ -6,7 +6,6 @@
 #include <VCLG/Graph/Port.hpp>
 #include <VCLG/Graph/Node.hpp>
 #include <VCLG/Graph/Connection.hpp>
-#include <VCLG/Graph/GraphValidator.hpp>
 
 #include <VCL/AST/Template.hpp>
 #include <VCL/Frontend/CompilerInstance.hpp>
@@ -34,9 +33,6 @@ namespace VCLG {
 
         inline GraphContext& GetGraphContext() { return graphContext; }
         inline Identity GetIdentity() const { return identity; }
-        inline GraphValidator& GetGraphValidator() { return validator; }
-        
-        inline bool Validate() { return validator.Validate(*this); }
 
         inline llvm::ArrayRef<Node*> GetNodes() const { return storage.GetNodes(); }
         inline llvm::ArrayRef<Connection> GetConnections() const { return connections; }
@@ -72,6 +68,11 @@ namespace VCLG {
         void DestroyConnection(Identity identity);
         void DestroyAllPortConnections(Identity portIdentity);
 
+        /**
+         * Connects an output and an input (in either order). Refused (INVALID_IDENTITY) when the
+         * input is already connected, when it would close a cycle, or when the types don't match:
+         * directly, through a converter, or by inferring the dependent ports' types.
+         */
         Identity Connect(Identity portAIdentity, Identity portBIdentity);
         Identity Connect(Port* portA, Port* portB);
 
@@ -97,13 +98,10 @@ namespace VCLG {
         Identity ConnectOutputToInput(Port* outPort, Port* inPort);
         Identity HasConnection(Port* outPort, Port* inPort);
         bool WouldCreateCycle(Port* outPort, Port* inPort) const;
-        bool CanBeConnected(VCL::Type* outType, VCL::Type* inType);
 
     private:
         Identity identity;
         GraphContext& graphContext;
-
-        GraphValidator validator;
 
         IdentityProvider identityProvider;
         GraphStorage storage;

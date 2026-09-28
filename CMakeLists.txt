@@ -31,9 +31,9 @@ add_library(vclg STATIC
     src/Graph/BuiltinNodes.cpp
     src/Graph/Definition.cpp
     src/Graph/Directives.cpp
+    src/Graph/Elaboration.cpp
     src/Graph/GraphContext.cpp
     src/Graph/GraphInstance.cpp
-    src/Graph/GraphValidator.cpp
     src/Graph/Node.cpp
 )
 target_include_directories(vclg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

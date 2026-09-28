@@ -11,13 +11,20 @@ TEST_CASE_METHOD(Test::GraphTest, "A templated node takes the type connected to 
     REQUIRE(pass->GetOutputs()[0]->IsDependent());
     REQUIRE(Connect(*graph, source->GetOutputs()[0], pass->GetInputs()[0]) != INVALID_IDENTITY);
 
-    REQUIRE(VCL::Type::IsCanonicallyEqual(pass->GetInputs()[0]->GetLastType(), arrayType));
-    REQUIRE(VCL::Type::IsCanonicallyEqual(pass->GetOutputs()[0]->GetLastType(), arrayType));
+    VCLG::ElaboratedGraph elaborated = VCLG::Elaborate(*graph);
+    REQUIRE(elaborated.Succeeded());
+    REQUIRE(VCL::Type::IsCanonicallyEqual(elaborated.GetPortType(pass->GetInputs()[0]), arrayType));
+    REQUIRE(VCL::Type::IsCanonicallyEqual(elaborated.GetPortType(pass->GetOutputs()[0]), arrayType));
 
     SECTION("and propagates it downstream") {
         auto* next = AddNode(*graph, "Passthrough");
         REQUIRE(Connect(*graph, pass->GetOutputs()[0], next->GetInputs()[0]) != INVALID_IDENTITY);
-        REQUIRE(VCL::Type::IsCanonicallyEqual(next->GetOutputs()[0]->GetLastType(), arrayType));
+        REQUIRE(VCL::Type::IsCanonicallyEqual(VCLG::Elaborate(*graph).GetPortType(next->GetOutputs()[0]), arrayType));
+    }
+
+    SECTION("without writing it into the graph") {
+        REQUIRE(pass->GetInputs()[0]->GetType() != arrayType);
+        REQUIRE(pass->GetInputs()[0]->GetType()->GetTypeClass() == VCL::Type::TypeAliasTypeClass);
     }
 
     SECTION("and a concrete consumer of another type is refused") {
@@ -46,5 +53,7 @@ TEST_CASE_METHOD(Test::GraphTest, "A Feedback Input takes the type of what feeds
     auto* source = AddNode(*graph, "ArraySource");
     auto* loopIn = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
     REQUIRE(Connect(*graph, source->GetOutputs()[0], loopIn->GetInputs()[0]) != INVALID_IDENTITY);
-    REQUIRE(VCL::Type::IsCanonicallyEqual(loopIn->GetType(), source->GetOutputs()[0]->GetType()));
+    VCL::Type* type = VCLG::Elaborate(*graph).GetPortType(loopIn->GetInputs()[0]);
+    REQUIRE(type != nullptr);
+    REQUIRE(VCL::Type::IsCanonicallyEqual(type, source->GetOutputs()[0]->GetType()));
 }

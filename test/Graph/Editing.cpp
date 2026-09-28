@@ -74,7 +74,7 @@ TEST_CASE_METHOD(Test::GraphTest, "Connections that would close a cycle are refu
         REQUIRE(Connect(*graph, a->GetOutputs()[0], c->GetInputs()[1]) != INVALID_IDENTITY);
     }
 
-    REQUIRE(graph->Validate());
+    REQUIRE(VCLG::Elaborate(*graph).Succeeded());
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Destroying a node removes its connections", "[Graph][Editing]") {
@@ -129,5 +129,6 @@ TEST_CASE_METHOD(Test::GraphTest, "Feedback Output keeps a live port when retarg
     REQUIRE(reader->GetOutputs().size() == 1);
     VCLG::Port* port = reader->GetOutputs()[0];
     REQUIRE(graph->GetPortByIdentity(port->GetIdentity()) == port);
-    REQUIRE(VCL::Type::IsCanonicallyEqual(port->GetType(), arrayLoop->GetType()));
+    REQUIRE(VCL::Type::IsCanonicallyEqual(port->GetType(), source->GetOutputs()[0]->GetType()));
+    REQUIRE(reader->GetFeedbackIdentity() == arrayLoop->GetIdentity());
 }

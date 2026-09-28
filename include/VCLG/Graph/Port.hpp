@@ -23,8 +23,7 @@ namespace VCLG {
         Port() = delete;
         Port(Identity owner, VCL::Type* type, const std::string& displayName, PortKind kind, VCL::ConstantValue* initializer, 
                 bool isDependent, Identity identity) :
-                owner{ owner }, type{ type }, substitutedType{ nullptr }, tentativeType{ nullptr }, overrideType{ nullptr }, 
-                displayName{ displayName }, kind{ kind }, 
+                owner{ owner }, type{ type }, displayName{ displayName }, kind{ kind }, 
                 initializer{ initializer }, initializerOverride{}, isDependent{ isDependent }, identity{ identity } {}
         Port(const Port& other) = delete;
         Port(Port&& other) = delete;
@@ -42,15 +41,11 @@ namespace VCLG {
         inline void SetInitializerOverride(const VCL::ConstantScalar& value) { initializerOverride.emplace(value); }
 
         inline Identity GetOwner() const { return owner; }
+        /**
+         * The declared type. For a dependent port it names the node's AutoParameters; the types
+         * inferred from the connections are in an ElaboratedGraph (`GetPortType`).
+         */
         inline VCL::Type* GetType() const { return type; }
-        inline VCL::Type* GetSubstitutedType() const { return substitutedType; }
-        inline void SetSubstitutedType(VCL::Type* type) { substitutedType = type; }
-        inline VCL::Type* GetTentativeType() const { return tentativeType; }
-        inline void SetTentativeType(VCL::Type* type) { tentativeType = type; }
-        inline VCL::Type* GetOverrideType() const { return overrideType; }
-        inline void SetOverrideType(VCL::Type* type) { overrideType = type; }
-        inline VCL::Type* GetLastType() const { return substitutedType ? substitutedType : type; }
-        inline VCL::Type* GetLastTentativeType() const { return tentativeType ? tentativeType : type; }
         inline const std::string& GetDisplayName() const { return displayName; }
         inline void SetDisplayName(const std::string& displayName) { this->displayName = displayName; }
         inline PortKind GetKind() const { return kind; }
@@ -61,9 +56,6 @@ namespace VCLG {
     private:
         Identity owner;
         VCL::Type* type;
-        VCL::Type* substitutedType;
-        VCL::Type* tentativeType;
-        VCL::Type* overrideType;
         std::string displayName;
         PortKind kind;
         VCL::ConstantValue* initializer;

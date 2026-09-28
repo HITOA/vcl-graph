@@ -25,13 +25,15 @@ namespace VCLG {
         void SetTypeSubstitution(VCL::TypeAliasDecl* decl, VCL::Type* type);
         void SetScalarSubstitution(VCL::VarDecl* decl, VCL::ConstantScalar* value);
 
-        VCL::Type* GetTypeSubstitution(VCL::TypeAliasDecl* decl);
-        VCL::ConstantScalar* GetScalarSubstitution(VCL::VarDecl* decl);
+        VCL::Type* GetTypeSubstitution(VCL::TypeAliasDecl* decl) const;
+        VCL::ConstantScalar* GetScalarSubstitution(VCL::VarDecl* decl) const;
 
-        bool HasDecl(VCL::Decl* decl);
+        bool HasDecl(VCL::Decl* decl) const;
 
         inline size_t Size() const { return table.size(); }
         inline void Clear() { table.clear(); }
+        /** Keeps the declarations, marks each of them unresolved. */
+        void ClearValues();
 
         llvm::DenseMap<VCL::Decl*, std::variant<VCL::Type*, VCL::ConstantScalar*>>::iterator begin() { return table.begin(); }
         llvm::DenseMap<VCL::Decl*, std::variant<VCL::Type*, VCL::ConstantScalar*>>::iterator end() { return table.end(); }

@@ -9,13 +9,12 @@ void VCLG::ASTPortTypeOverrideWriter::HandleTopLevelDecl(VCL::Decl* decl) {
 
     VCL::VarDecl* varDecl = (VCL::VarDecl*)decl;
 
-    for (size_t i = 0; i < ports.size(); ++i) {
+    for (size_t i = 0; i < overrides.size(); ++i) {
         const SourcePortDefinition& definition = definitions[i];
-        Port* port= ports[i];
 
         if (varDecl->GetIdentifierInfo() == definition.GetDecl()->GetIdentifierInfo()) {
-            if (port->GetOverrideType() != nullptr) {
-                varDecl->SetValueType(port->GetOverrideType());
+            if (overrides[i] != nullptr) {
+                varDecl->SetValueType(overrides[i]);
                 varDecl->SetInitializer(nullptr);
             }
             break;

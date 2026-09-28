@@ -1,7 +1,6 @@
 #pragma once
 
 #include <VCLG/Core/IdentityProvider.hpp>
-#include <VCLG/Core/SubstitutionTable.hpp>
 
 #include <VCL/Core/Source.hpp>
 
@@ -20,7 +19,6 @@ namespace VCLG {
     class SourceNode;
     class SubgraphNode;
     class BuiltinNode;
-    class CodeGenGraph;
 
     class Node {
     public:
@@ -53,7 +51,7 @@ namespace VCLG {
         Node() = delete;
         Node(NodeKind kind, Identity identity, const std::string& displayName, 
                 llvm::ArrayRef<Port*> inPorts = {}, llvm::ArrayRef<Port*> outPorts = {}) : 
-            kind{ kind }, flags{ NodeFlag::None }, table{}, identity{ identity }, 
+            kind{ kind }, flags{ NodeFlag::None }, identity{ identity }, 
                 displayName{ displayName }, inPorts{ inPorts }, outPorts{ outPorts } {}
         Node(const Node& other) = delete;
         Node(Node&& other) = delete;
@@ -72,8 +70,6 @@ namespace VCLG {
         inline bool HasFlag(NodeFlag flag) const { return ((uint32_t)flags & (uint32_t)flag) != 0; }
         inline void AddFlag(NodeFlag flag) { this->flags = (NodeFlag)((uint32_t)flags | (uint32_t)flag); }
 
-        inline SubstitutionTable& GetSubstitutionTable() { return table; }
-
         void NormalizePortDisplayNameLength();
 
     protected:
@@ -83,8 +79,6 @@ namespace VCLG {
     private:
         NodeKind kind;
         NodeFlag flags;
-
-        SubstitutionTable table;
 
         Identity identity;
 
@@ -115,8 +109,8 @@ namespace VCLG {
     
     /**
      * Base of the nodes defined by vcl-graph itself rather than by a VCL source (see
-     * BuiltinNodes.hpp). Expected to disappear: once emission moves into the compile passes
-     * (elaboration, VCL glue), nothing is left here that Node doesn't have.
+     * BuiltinNodes.hpp). Emission is done by CodeGenGraph (a switch on NodeKind over the elaborated
+     * graph); what's left here is the editing behaviour (creating and destroying ports).
      */
     class BuiltinNode : public Node {
     public:
@@ -130,7 +124,6 @@ namespace VCLG {
 
         virtual void Initialize() = 0;
         virtual void Destroy() = 0;
-        virtual bool Emit(CodeGenGraph& codegen) = 0;
 
         inline GraphInstance& GetOwner() { return owner; }
 

@@ -2,6 +2,10 @@
 
 #include <VCLG/Graph/Node.hpp>
 
+#include <VCL/AST/Type.hpp>
+
+#include <llvm/ADT/DenseMap.h>
+
 #include <string>
 #include <memory>
 
@@ -18,9 +22,6 @@ namespace VCLG {
 
         void Initialize() override;
         void Destroy() override;
-        bool Emit(CodeGenGraph& codegen) override;
-
-        VCL::Type* GetType();
 
         using Node::SetDisplayName;
     };
@@ -38,7 +39,6 @@ namespace VCLG {
 
         void Initialize() override;
         void Destroy() override;
-        bool Emit(CodeGenGraph& codegen) override;
 
         VCL::Type* GetType();
 
@@ -59,11 +59,17 @@ namespace VCLG {
         
         void Initialize() override;
         void Destroy() override;
-        bool Emit(CodeGenGraph& codegen) override;
         void SetGraph(std::shared_ptr<GraphInstance> instance);
+        /**
+         * Rebuilds the ports from the subgraph's input and output nodes. An output port's type is
+         * the type inferred for its output node in the subgraph on its own; each use gets its own
+         * types when elaborated.
+         */
         void Update();
 
         inline std::shared_ptr<GraphInstance> GetGraph() { return instance; }
+        /** This node's port for a Subgraph Input or Output node of the subgraph, or null. */
+        Port* GetPortForNode(Identity innerNode) const;
 
     private:
         std::shared_ptr<GraphInstance> instance;
@@ -79,9 +85,6 @@ namespace VCLG {
 
         void Initialize() override;
         void Destroy() override;
-        bool Emit(CodeGenGraph& codegen) override;
-
-        VCL::Type* GetType();
 
         using Node::SetDisplayName;
     };
@@ -95,7 +98,10 @@ namespace VCLG {
         
         void Initialize() override;
         void Destroy() override;
-        bool Emit(CodeGenGraph& codegen) override;
+        /**
+         * Links this node to the Feedback Input `feedbackIdentity` (INVALID_IDENTITY: unlinks it).
+         * The output port's type is the type inferred for the Feedback Input in its graph.
+         */
         void Update(Identity feedbackIdentity);
 
         inline Identity GetFeedbackIdentity() const { return feedbackIdentity; }

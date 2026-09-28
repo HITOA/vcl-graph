@@ -2,6 +2,7 @@
 
 #include <VCLG/Graph/GraphContext.hpp>
 #include <VCLG/Graph/GraphInstance.hpp>
+#include <VCLG/Graph/Elaboration.hpp>
 #include <VCLG/Graph/Node.hpp>
 #include <VCLG/CodeGen/CodeGenEntrypoint.hpp>
 
@@ -12,15 +13,15 @@
 
 namespace VCLG {
 
+    /**
+     * Compiles a graph into one LLVM module: elaborates it (see ElaboratedGraph), then emits each
+     * elaborated node in execution order. Every copy of a subgraph gets its own symbols, prefixed
+     * by its graph path.
+     */
     class CodeGenGraph {
     public:
         CodeGenGraph() = delete;
-        /**
-         * `manglingScope` prefixes the symbols of every node emitted here. Empty means the root graph
-         * ("g<graph identity>"). A subgraph passes the path of the SubgraphNode that uses it, so the
-         * same subgraph used twice gets two separate copies of its nodes' code and state.
-         */
-        CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module, std::string manglingScope = {});
+        CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module);
         CodeGenGraph(const CodeGenGraph& other) = delete;
         CodeGenGraph(CodeGenGraph&& other) = delete;
         ~CodeGenGraph() = default;
@@ -36,21 +37,27 @@ namespace VCLG {
         bool LinkNow();
 
         bool Emit();
-        bool EmitSourceNode(SourceNode* node);
-        bool EmitBuiltinNode(BuiltinNode* node);
 
-        Port* GetInPortToOutPort(Port* inPort);
-        llvm::GlobalVariable* GetOutPortGlobalVar(Port* port);
-        void AddOutPortGlobalVar(Port* port, llvm::GlobalVariable* var);
-
-        void ImportSubgraph(CodeGenGraph& codegen);
-
-        /** Mangling prefix for the CompilerInstances created for `node`: "<scope>/n<identity>". */
-        std::string GetNodeManglingPrefix(Node* node) const;
-    
     private:
-        void BuildPortMap();
-        bool BuildOrderedNodeList(std::vector<Node*>& nodes);
+        using NodeIndex = ElaboratedGraph::NodeIndex;
+
+        bool EmitSourceNode(NodeIndex index);
+        bool EmitSubgraphInputNode(NodeIndex index);
+        bool EmitSubgraphOutputNode(NodeIndex index);
+        bool EmitFeedbackInputNode(NodeIndex index);
+        bool EmitFeedbackOutputNode(NodeIndex index);
+
+        /**
+         * The global holding the value of `index`'s input `input` when it's not simply the
+         * producer's (converted connection, or unconnected): declared as `name` under the node's
+         * path, filled by the converter or with the input's initializer.
+         */
+        llvm::GlobalVariable* EmitInputGlobal(NodeIndex index, uint32_t input, llvm::StringRef name);
+        /** Declares a global `name` of `type` under the mangling prefix `path`, with an optional initial value. */
+        llvm::GlobalVariable* EmitGlobal(const std::string& path, llvm::StringRef name, VCL::Type* type,
+            const std::optional<VCL::ConstantScalar>& initializer);
+        llvm::GlobalVariable* GetSourceGlobal(const ElaboratedGraph::Edge& edge);
+        bool ReportGraphError(const std::string& message);
 
     private:
         std::unique_ptr<CodeGenEntrypoint> entrypoint;
@@ -58,13 +65,15 @@ namespace VCLG {
         GraphContext& graphContext;
         GraphInstance& graph;
         llvm::Module& module;
-        std::string manglingScope;
         VCL::CompilerContext cc;
         VCL::ModuleTable aggregatedImportedModuleTable;
-        
+
+        ElaboratedGraph elaborated;
         std::vector<std::shared_ptr<VCL::CompilerInstance>> nodeCompilerInstances;
-        std::unordered_map<Port*, Port*> inPortToOutPort;
-        std::unordered_map<Port*, llvm::GlobalVariable*> outPortGlobalVar;
+        /** The global holding each output of each elaborated node, once emitted. */
+        std::vector<llvm::SmallVector<llvm::GlobalVariable*, 2>> outputGlobals;
+        /** The global holding each Feedback Input's value, declared by the first Feedback Output reading it. */
+        llvm::DenseMap<NodeIndex, llvm::GlobalVariable*> feedbackGlobals;
     };
 
 }

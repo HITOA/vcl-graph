@@ -16,7 +16,7 @@ namespace VCLG {
     class ASTAutoParameterSubstitution : public VCL::ASTConsumer {
     public:
         ASTAutoParameterSubstitution(VCL::Sema& sema, VCL::IdentifierTable& identifierTable, 
-            SubstitutionTable& table, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters) :
+            const SubstitutionTable& table, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters) :
             sema{ sema }, identifierTable{ identifierTable }, table{ table }, autoParameters{ autoParameters } {}
 
         void HandleTopLevelDecl(VCL::Decl* decl) override;
@@ -27,7 +27,7 @@ namespace VCLG {
     private:
         VCL::Sema& sema;
         VCL::IdentifierTable& identifierTable;
-        SubstitutionTable& table;
+        const SubstitutionTable& table;
         llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters;
     };
 

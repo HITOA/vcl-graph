@@ -5,6 +5,7 @@
 #include <VCLG/Graph/GraphContext.hpp>
 #include <VCLG/Graph/GraphInstance.hpp>
 #include <VCLG/Graph/BuiltinNodes.hpp>
+#include <VCLG/Graph/Elaboration.hpp>
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
 #include <VCLG/Core/Diagnostics.hpp>
 

@@ -4,6 +4,8 @@
 #include <VCLG/Graph/Port.hpp>
 #include <VCLG/Graph/Parameter.hpp>
 #include <VCLG/Graph/BuiltinNodes.hpp>
+#include <VCLG/Graph/Elaboration.hpp>
+#include <VCLG/Graph/Converter.hpp>
 
 #include <VCL/AST/ConstantValue.hpp>
 #include <VCL/AST/Expr.hpp>
@@ -43,7 +45,7 @@ static std::optional<VCL::ConstantScalar> GetDefaultInitializerOverride(VCL::Typ
 }
 
 VCLG::GraphInstance::GraphInstance(GraphContext& graphContext, Identity identity) :
-    graphContext{ graphContext }, identity{ identity }, validator{}, identityProvider{ }, storage{}, name{ "New Graph" } {
+    graphContext{ graphContext }, identity{ identity }, identityProvider{ }, storage{}, name{ "New Graph" } {
 }
 
 VCLG::GraphInstance::~GraphInstance() {
@@ -115,14 +117,6 @@ VCLG::SourceNode* VCLG::GraphInstance::InstantiateSourceNode(VCL::Source* source
         inPorts, outPorts, parameters, instancedNodeIdentity);
     SourceNode* node = ownedNode.get();
 
-    for (const SourceAutoParameterDefinition& autoParam : definition->GetAutoParameters()) {
-        if (autoParam.GetDecl()->GetDeclClass() == VCL::Decl::TypeAliasDeclClass) {
-            node->GetSubstitutionTable().SetTypeSubstitution((VCL::TypeAliasDecl*)autoParam.GetDecl(), nullptr);
-        } else {
-            node->GetSubstitutionTable().SetScalarSubstitution((VCL::VarDecl*)autoParam.GetDecl(), nullptr);
-        }
-    }
-
     storage.AddNode(std::move(ownedNode));
 
     if (definition->HasFlag(SourceNodeDefinition::DefinitionNodeFlag::IsInputNode))
@@ -174,16 +168,10 @@ void VCLG::GraphInstance::DestroyNode(Node* node) {
 void VCLG::GraphInstance::DestroyConnection(Identity identity) {
     for (int i = 0; i < connections.size(); ++i) {
         if (connections[i].GetIdentity() == identity) {
-            Connection& conn = connections[i];
-            Port* inPort = GetPortByIdentity(conn.GetInputPortIdentity());
-            Port* outPort = GetPortByIdentity(conn.GetOutputPortIdentity());
-            if (conn.GetConverter() != nullptr)
-                conn.GetConverter()->OnLinkDestroyed(outPort, inPort);
             connections.erase(connections.begin() + i);
             break;
         }
     }
-    validator.Validate(*this);
 }
 
 void VCLG::GraphInstance::DestroyAllPortConnections(Identity identity) {
@@ -273,36 +261,34 @@ VCLG::Identity VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* in
     if (WouldCreateCycle(outPort, inPort))
         return INVALID_IDENTITY;
 
-    VCL::Type* outType = outPort->GetLastType();
-    VCL::Type* inType = inPort->GetLastType();
+    // The output's type as currently inferred (its declared type while unresolved).
+    VCL::Type* outType = Elaborate(*this).GetPortType(outPort);
+    if (!outType)
+        outType = outPort->GetType();
 
-    if ((!outPort->IsDependent() && inPort->IsDependent()) 
-        || (outPort->IsDependent() && !inPort->IsDependent())
-        || (!outPort->IsDependent() && !inPort->IsDependent())) {
+    if (!outPort->IsDependent() || !inPort->IsDependent()) {
         for (Converter* converter : graphContext.GetConverters()) {
-            if (converter->Convertible(outPort, inPort)) {
+            if (converter->Convertible(outType, inPort->GetType())) {
                 Identity connectionIdentity = identityProvider.Next();
                 connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, converter);
-                converter->OnLinkCreated(outPort, inPort);
                 return connectionIdentity;
             }
         }
-    } if (outPort->IsDependent() || inPort->IsDependent()) {
+    }
+
+    if (outPort->IsDependent() || inPort->IsDependent()) {
+        // Accepted if the types can still be inferred with the connection.
         Identity connectionIdentity = identityProvider.Peek();
         connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, nullptr);
-        if (validator.Validate(*this)) {
+        if (Elaborate(*this).Succeeded()) {
             identityProvider.Next();
             return connectionIdentity;
-        } else {
-            for (int i = 0; i < connections.size(); ++i) {
-                if (connections[i].GetIdentity() == connectionIdentity) {
-                    connections.erase(connections.begin() + i);
-                    break;
-                }
-            }
-            return INVALID_IDENTITY;
         }
-    } else if (VCL::Type::IsCanonicallyEqual(outType, inType)) {
+        connections.pop_back();
+        return INVALID_IDENTITY;
+    }
+
+    if (VCL::Type::IsCanonicallyEqual(outType, inPort->GetType())) {
         Identity connectionIdentity = identityProvider.Next();
         connections.emplace_back(inPort->GetIdentity(), outPort->GetIdentity(), connectionIdentity, nullptr);
         return connectionIdentity;
@@ -318,9 +304,6 @@ VCLG::Identity VCLG::GraphInstance::HasConnection(Port* outPort, Port* inPort) {
     return INVALID_IDENTITY;
 }
 
-bool VCLG::GraphInstance::CanBeConnected(VCL::Type* outType, VCL::Type* inType) {
-    return VCL::Type::IsCanonicallyEqual(outType, inType);
-}
 bool VCLG::GraphInstance::WouldCreateCycle(Port* outPort, Port* inPort) const {
     // The new edge goes producer -> consumer. It closes a cycle if the producer already depends,
     // directly or not, on the consumer.

@@ -6,6 +6,7 @@ find_package(Catch2 3 REQUIRED)
 add_executable(vclg_test
     Graph/Diagnostics.cpp
     Graph/Editing.cpp
+    Graph/Elaboration.cpp
     Graph/Execution.cpp
     Graph/Inference.cpp
     Graph/Lifetime.cpp

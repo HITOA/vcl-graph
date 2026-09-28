@@ -49,7 +49,7 @@ TEST_CASE_METHOD(Test::GraphTest, "Deep diamond chains stay fast", "[Graph][Orde
     previous->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
 
     auto start = std::chrono::steady_clock::now();
-    REQUIRE(graph->Validate());
+    REQUIRE(VCLG::Elaborate(*graph).Succeeded());
     REQUIRE(Emit(*graph, [](llvm::Module&) {}));
     double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     REQUIRE(seconds < 10.0); // generous for sanitizer builds; it takes a fraction of a second
