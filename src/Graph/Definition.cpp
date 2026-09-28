@@ -49,13 +49,28 @@ void VCLG::DefinitionRegistry::Reset() {
         SourceNodeDefinition* definition = definitions[str];
         size_t size = SourceNodeDefinition::totalSizeToAlloc<SourcePortDefinition*, SourceParameterDefinition*, SourceAutoParameterDefinition*>(
                 definition->GetPorts().size(), definition->GetParameters().size(), definition->GetAutoParameters().size());
-        for (SourcePortDefinition* port : definition->GetPorts())
-            allocator->Deallocate(port, sizeof(SourcePortDefinition));
-        for (SourceParameterDefinition* parameter : definition->GetParameters())
-            allocator->Deallocate(parameter, sizeof(SourceParameterDefinition));
+        DestroyDefinitions(definition->GetPorts(), definition->GetParameters(), definition->GetAutoParameters());
+        // Also releases the CompilerInstance (and its AST) the definition was parsed with.
+        definition->~SourceNodeDefinition();
         allocator->Deallocate(definition, size);
     }
     definitions.clear();
+}
+
+void VCLG::DefinitionRegistry::DestroyDefinitions(llvm::ArrayRef<SourcePortDefinition*> ports,
+        llvm::ArrayRef<SourceParameterDefinition*> parameters, llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters) {
+    for (SourcePortDefinition* port : ports) {
+        port->~SourcePortDefinition();
+        allocator->Deallocate(port, sizeof(SourcePortDefinition));
+    }
+    for (SourceParameterDefinition* parameter : parameters) {
+        parameter->~SourceParameterDefinition();
+        allocator->Deallocate(parameter, sizeof(SourceParameterDefinition));
+    }
+    for (SourceAutoParameterDefinition* autoParameter : autoParameters) {
+        autoParameter->~SourceAutoParameterDefinition();
+        allocator->Deallocate(autoParameter, sizeof(SourceAutoParameterDefinition));
+    }
 }
 
 VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition(VCL::Source* source) {
@@ -63,9 +78,10 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
 
     std::shared_ptr<VCL::CompilerInstance> instance = cc.CreateInstance();
     instance->BeginSource(source);
-    if (!instance->ExecuteAction(action))
-        return nullptr;
+    bool parsed = instance->ExecuteAction(action);
     instance->EndSource();
+    if (!parsed)
+        return nullptr;
 
     VCL::TranslationUnitDecl* tu = instance->GetASTContext().GetTranslationUnitDecl();
 
@@ -76,6 +92,15 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
     bool hasInstanceData = false;
     VCL::FunctionDecl* entrypoint = nullptr;
     VCL::FunctionDecl* reset = nullptr;
+
+    auto fail = [&](const char* message) -> SourceNodeDefinition* {
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::NodeDefinitionError, std::string{ message } + " (" + source->GetBufferIdentifier().str() + ")")
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
+        DestroyDefinitions(ports, parameters, autoParameters);
+        DestroyDefinitions(outPorts, {}, {});
+        return nullptr;
+    };
 
     for (auto it = tu->Begin(); it != tu->End(); ++it) {
         switch (it->GetDeclClass()) {
@@ -106,20 +131,12 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
             case VCL::Decl::FunctionDeclClass: {
                 VCL::FunctionDecl* decl = (VCL::FunctionDecl*)it.Get();
                 if (decl->HasAttribute(nodeProcessAttributeDefinition) != nullptr) {
-                    if (entrypoint != nullptr) {
-                        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                            .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                            .Report();
-                        return nullptr;
-                    }
+                    if (entrypoint != nullptr)
+                        return fail("more than one [NodeProcess] function");
                     entrypoint = decl;
                 } else if (decl->HasAttribute(nodeResetAttributeDefinition) != nullptr) {
-                    if (reset != nullptr) {
-                        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-                            .SetCompilerInfo(__FILE__, __func__, __LINE__)
-                            .Report();
-                        return nullptr;
-                    }
+                    if (reset != nullptr)
+                        return fail("more than one [NodeReset] function");
                     reset = decl;
                 }
                 break;
@@ -127,12 +144,8 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
         }
     }
 
-    if (entrypoint == nullptr) {
-        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
-            .SetCompilerInfo(__FILE__, __func__, __LINE__)
-            .Report();
-        return nullptr;
-    }
+    if (entrypoint == nullptr)
+        return fail("no [NodeProcess] function");
 
     ports.append(outPorts);
 

@@ -3,6 +3,7 @@
 #include <VCLG/Graph/GraphContext.hpp>
 #include <VCLG/Graph/Port.hpp>
 #include <VCLG/Graph/Parameter.hpp>
+#include <VCLG/Graph/TransientNodes.hpp>
 
 #include <VCL/AST/ConstantValue.hpp>
 #include <VCL/AST/Expr.hpp>
@@ -10,6 +11,9 @@
 #include <VCL/Frontend/CompilerInstance.hpp>
 
 #include <iostream>
+#include <functional>
+#include <unordered_map>
+#include <unordered_set>
 
 
 VCLG::GraphInstance::GraphInstance(GraphContext& graphContext, Identity identity,
@@ -161,7 +165,7 @@ VCLG::Port* VCLG::GraphInstance::OverwritePort(Port* port, Identity owner, VCL::
     userDataTailAllocator->ConstructPortUserData(newPort, ptr);
     storage.AddPort(newPort);
 
-    return port;
+    return newPort; // `port` was destroyed above
 }
 
 VCLG::Parameter* VCLG::GraphInstance::InstantiateParameter(Identity owner, VCL::Type* type, const std::string& displayName, VCL::ConstantValue* initializer) {
@@ -189,7 +193,7 @@ void VCLG::GraphInstance::DestroyParameter(Parameter* parameter) {
     void* ptr = ((uint8_t*)parameter) + sizeof(Parameter);
     userDataTailAllocator->DestroyParameterUserData(parameter, ptr);
     parameter->~Parameter();
-    allocator->Deallocate(parameter, parameterAdditionalDataSize);
+    allocator->Deallocate(parameter, parameterTotalSize);
 }
 
 void VCLG::GraphInstance::DestroyNode(Node* node) {
@@ -279,7 +283,7 @@ void VCLG::GraphInstance::DestroySourceNode(SourceNode* node) {
     size_t portTotalSize = sizeof(Port) + portAdditionalDataSize;
 
     size_t parameterAdditionalDataSize = userDataTailAllocator->GetParameterUserDataAdditionalSize();
-    size_t parameterTotalSize = sizeof(Parameter) + portAdditionalDataSize;
+    size_t parameterTotalSize = sizeof(Parameter) + parameterAdditionalDataSize;
 
     DestroyNodeConnections(node);
     storage.RemoveNode(node);
@@ -318,6 +322,10 @@ VCLG::Identity VCLG::GraphInstance::ConnectOutputToInput(Port* outPort, Port* in
     for (Connection& conn : connections)
         if (conn.GetInputPortIdentity() == inPort->GetIdentity())
             return INVALID_IDENTITY;
+
+    // Ordinary connections must stay acyclic: loops go through Feedback Input/Output nodes.
+    if (WouldCreateCycle(outPort, inPort))
+        return INVALID_IDENTITY;
 
     VCL::Type* outType = outPort->GetLastType();
     VCL::Type* inType = inPort->GetLastType();
@@ -366,4 +374,92 @@ VCLG::Identity VCLG::GraphInstance::HasConnection(Port* outPort, Port* inPort) {
 
 bool VCLG::GraphInstance::CanBeConnected(VCL::Type* outType, VCL::Type* inType) {
     return VCL::Type::IsCanonicallyEqual(outType, inType);
+}
+bool VCLG::GraphInstance::WouldCreateCycle(Port* outPort, Port* inPort) const {
+    // The new edge goes producer -> consumer. It closes a cycle if the producer already depends,
+    // directly or not, on the consumer.
+    Node* producer = GetNodeByIdentity(outPort->GetOwner());
+    Node* consumer = GetNodeByIdentity(inPort->GetOwner());
+    if (producer == consumer)
+        return true;
+
+    std::unordered_map<Port*, Node*> inPortToSource{};
+    for (const Connection& connection : connections) {
+        Port* connectionOutPort = GetPortByIdentity(connection.GetOutputPortIdentity());
+        inPortToSource[GetPortByIdentity(connection.GetInputPortIdentity())] = GetNodeByIdentity(connectionOutPort->GetOwner());
+    }
+
+    std::unordered_set<Node*> visited{ producer };
+    std::vector<Node*> toVisit{ producer };
+    while (!toVisit.empty()) {
+        Node* node = toVisit.back();
+        toVisit.pop_back();
+        for (Port* nodeInPort : Node::GetNodeInputs(node)) {
+            auto it = inPortToSource.find(nodeInPort);
+            if (it == inPortToSource.end())
+                continue;
+            if (it->second == consumer)
+                return true;
+            if (visited.insert(it->second).second)
+                toVisit.push_back(it->second);
+        }
+    }
+    return false;
+}
+
+bool VCLG::GraphInstance::BuildExecutionOrder(llvm::ArrayRef<Node*> roots, std::vector<Node*>& order) const {
+    order.clear();
+
+    std::unordered_map<Port*, Node*> inPortToSource{};
+    for (const Connection& connection : connections) {
+        Port* outPort = GetPortByIdentity(connection.GetOutputPortIdentity());
+        inPortToSource[GetPortByIdentity(connection.GetInputPortIdentity())] = GetNodeByIdentity(outPort->GetOwner());
+    }
+
+    // A Feedback Output shares its Feedback Input's value and must be emitted first. Feedback
+    // Outputs have no inputs, so this ordering edge can never be part of a cycle.
+    std::unordered_map<Identity, std::vector<Node*>> feedbackReaders{};
+    for (Node* node : GetNodes()) {
+        if (node->GetNodeClass() != Node::TransientNodeClass)
+            continue;
+        TransientNode* transientNode = (TransientNode*)node;
+        if (transientNode->GetHash() != typeid(FeedbackOutputNode).hash_code())
+            continue;
+        Identity feedbackIdentity = ((FeedbackOutputNode*)transientNode)->GetFeedbackIdentity();
+        if (feedbackIdentity != INVALID_IDENTITY)
+            feedbackReaders[feedbackIdentity].push_back(node);
+    }
+
+    enum class VisitState : uint8_t { Unvisited, InProgress, Done };
+    std::unordered_map<Node*, VisitState> states{};
+
+    // Depth-first, post-order: each node is appended once all its dependencies are.
+    std::function<bool(Node*)> visit = [&](Node* node) -> bool {
+        VisitState& state = states[node]; // references into an unordered_map survive rehashing
+        if (state == VisitState::Done)
+            return true;
+        if (state == VisitState::InProgress)
+            return false;
+        state = VisitState::InProgress;
+
+        for (Port* inPort : Node::GetNodeInputs(node)) {
+            auto it = inPortToSource.find(inPort);
+            if (it != inPortToSource.end() && !visit(it->second))
+                return false;
+        }
+        if (auto it = feedbackReaders.find(node->GetIdentity()); it != feedbackReaders.end()) {
+            for (Node* reader : it->second)
+                if (!visit(reader))
+                    return false;
+        }
+
+        state = VisitState::Done;
+        order.push_back(node);
+        return true;
+    };
+
+    for (Node* root : roots)
+        if (!visit(root))
+            return false;
+    return true;
 }

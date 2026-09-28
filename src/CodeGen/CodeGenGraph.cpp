@@ -27,8 +27,10 @@
 #include <iostream>
 
 
-VCLG::CodeGenGraph::CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module) :
-        graphContext{ graphContext }, graph{ graph }, module{ module }, cc{ graphContext.GetCompilerContext().GetInvocation() },
+VCLG::CodeGenGraph::CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module, std::string manglingScope) :
+        graphContext{ graphContext }, graph{ graph }, module{ module },
+        manglingScope{ manglingScope.empty() ? "g" + std::to_string(graph.GetIdentity()) : std::move(manglingScope) },
+        cc{ graphContext.GetCompilerContext().GetInvocation() },
         aggregatedImportedModuleTable{}, nodeCompilerInstances{}, inPortToOutPort{}, outPortGlobalVar{} {
     
     cc.CopyDiagnosticEngine(graphContext.GetCompilerContext());
@@ -77,7 +79,13 @@ bool VCLG::CodeGenGraph::Emit() {
     reset->Begin();
 
     BuildPortMap();
-    std::vector<Node*> nodes = BuildOrderedNodeList();
+    std::vector<Node*> nodes{};
+    if (!BuildOrderedNodeList(nodes)) {
+        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::InternalError)
+            .SetCompilerInfo(__FILE__, __func__, __LINE__)
+            .Report();
+        return false;
+    }
 
     for (Node* node : nodes) {
         switch (node->GetNodeClass()) {
@@ -109,6 +117,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
     std::shared_ptr<VCL::CompilerInstance> instance = cc.CreateInstance();
     nodeCompilerInstances.push_back(instance);
     
+    instance->SetManglingPrefix(GetNodeManglingPrefix(node));
     instance->CreateASTContext();
     instance->CreateExportSymbolTable();
     instance->CreateImportModuleTable();
@@ -325,39 +334,18 @@ void VCLG::CodeGenGraph::BuildPortMap() {
     }
 }
 
-std::vector<VCLG::Node*> VCLG::CodeGenGraph::BuildOrderedNodeList() {
-    // For now, I assume the graph is acyclic
-
-    std::vector<Node*> nodes{};
-
-    std::unordered_set<Node*> visitedNodes{};
-    std::queue<Node*> nodeToVisite{};
-
+bool VCLG::CodeGenGraph::BuildOrderedNodeList(std::vector<Node*>& nodes) {
+    // Roots are visited last-to-first, which keeps their relative order the same as before.
+    llvm::SmallVector<Node*> roots{};
     for (Node* node : graph.GetNodes())
         if (node->HasFlag(Node::NodeFlag::IsOutputNode))
-            nodeToVisite.push(node);
-    
-    while (!nodeToVisite.empty()) {
-        Node* currentNode = nodeToVisite.front();
-        nodeToVisite.pop();
+            roots.push_back(node);
+    std::reverse(roots.begin(), roots.end());
 
-        if (visitedNodes.count(currentNode)) {
-            nodes.erase(std::remove(nodes.begin(), nodes.end(), currentNode), nodes.end());
-            nodes.push_back(currentNode);
-        } else {
-            nodes.push_back(currentNode);
-            visitedNodes.insert(currentNode);
-        }
+    // Unreachable in practice: GraphInstance refuses connections that would close a cycle.
+    return graph.BuildExecutionOrder(roots, nodes);
+}
 
-        for (Port* inPort : Node::GetNodeInputs(currentNode)) {
-            if (!inPortToOutPort.count(inPort))
-                continue;
-            Port* connectedPort = inPortToOutPort[inPort];
-            Node* connectedNode = graph.GetNodeByIdentity(connectedPort->GetOwner());
-            nodeToVisite.push(connectedNode);
-        }
-    }
-
-    std::reverse(nodes.begin(), nodes.end());
-    return std::move(nodes);
+std::string VCLG::CodeGenGraph::GetNodeManglingPrefix(Node* node) const {
+    return manglingScope + "/n" + std::to_string(node->GetIdentity());
 }

@@ -84,6 +84,13 @@ namespace VCLG {
         Identity Connect(Identity portAIdentity, Identity portBIdentity);
         Identity Connect(Port* portA, Port* portB);
 
+        /**
+         * Fill `order` with the nodes reachable upstream from `roots`, in execution order: every
+         * node comes after the nodes feeding its inputs, and a Feedback Input comes after the
+         * Feedback Outputs that read it. Returns false if the connections contain a cycle.
+         */
+        bool BuildExecutionOrder(llvm::ArrayRef<Node*> roots, std::vector<Node*>& order) const;
+
         void Reset();
 
         inline const std::string& GetName() const { return name; }
@@ -99,6 +106,7 @@ namespace VCLG {
 
         Identity ConnectOutputToInput(Port* outPort, Port* inPort);
         Identity HasConnection(Port* outPort, Port* inPort);
+        bool WouldCreateCycle(Port* outPort, Port* inPort) const;
         bool CanBeConnected(VCL::Type* outType, VCL::Type* inType);
 
     private:

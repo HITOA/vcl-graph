@@ -39,7 +39,7 @@ namespace VCLG {
     
     private:
         void ClearSubstitutionTable(GraphInstance& graph);
-        std::vector<Node*> BuildOrderedDependentNodeList(GraphInstance& graph);
+        bool BuildOrderedDependentNodeList(GraphInstance& graph, std::vector<Node*>& nodes);
 
         bool SubstituteType(Node* node, VCL::Type* baseType, VCL::Type* connectedType);
         bool SubstituteExpression(Node* node, VCL::DeclRefExpr* baseExpr, VCL::ConstantScalar* scalar);
@@ -52,6 +52,7 @@ namespace VCLG {
 
         std::unordered_map<Port*, Port*> inPortToOutPort{};
         std::unordered_set<Port*> connectedOutPort{};
+        std::unordered_map<Port*, std::vector<Port*>> outPortToInPorts{};
     };
 
 }

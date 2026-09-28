@@ -171,6 +171,8 @@ namespace VCLG {
         SourcePortDefinition* CreateSourcePortDefinition(VCL::VarDecl* varDecl, llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters);
         SourceParameterDefinition* CreateSourceParameterDefinition(VCL::VarDecl* varDecl);
         SourceAutoParameterDefinition* CreateSourceAutoParameterDefinition(VCL::NamedDecl* decl);
+        void DestroyDefinitions(llvm::ArrayRef<SourcePortDefinition*> ports, llvm::ArrayRef<SourceParameterDefinition*> parameters,
+            llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters);
 
         std::string GetStringAttribute(VCL::AttributeInstance* attribute);
         std::string GetStringDefine(std::shared_ptr<VCL::CompilerInstance> instance, llvm::StringRef name);

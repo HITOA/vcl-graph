@@ -20,7 +20,9 @@ VCLG::GraphValidator::GraphValidator() : inPortToOutPort{}, connectedOutPort{} {
 
 bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
     ClearSubstitutionTable(graph);
-    std::vector<Node*> dependentNodes = BuildOrderedDependentNodeList(graph);
+    std::vector<Node*> dependentNodes{};
+    if (!BuildOrderedDependentNodeList(graph, dependentNodes))
+        return false;
     VCL::ASTContext& globalASTContext = graph.GetGraphContext().GetGlobalASTContext();
     
     for (Node* node : dependentNodes) {
@@ -51,19 +53,15 @@ bool VCLG::GraphValidator::Validate(GraphInstance& graph) {
             }
         }
         for (Port* outPort : Node::GetNodeOutputs(node)) {
-            if (connectedOutPort.count(outPort)) {
-                for (const Connection& connection : graph.GetConnections()) {
-                    if (connection.GetConverter() != nullptr)
-                        continue;
-                    Port* inPort = graph.GetPortByIdentity(connection.GetInputPortIdentity());
+            auto connectedInPorts = outPortToInPorts.find(outPort);
+            if (connectedInPorts != outPortToInPorts.end()) {
+                for (Port* inPort : connectedInPorts->second) {
                     if (!inPort->IsDependent() && !outPort->IsDependent())
                         continue;
                     if (inPort->IsDependent() && inPort->GetTentativeType() == nullptr)
                         continue;
-                    if (outPort == graph.GetPortByIdentity(connection.GetOutputPortIdentity())) {
-                        if (!SubstituteType(node, outPort->GetType(), inPort->GetLastTentativeType()))
-                            return false;
-                    }
+                    if (!SubstituteType(node, outPort->GetType(), inPort->GetLastTentativeType()))
+                        return false;
                 }
             }
         }
@@ -119,52 +117,30 @@ void VCLG::GraphValidator::ClearSubstitutionTable(GraphInstance& graph) {
     }
 }
 
-std::vector<VCLG::Node*> VCLG::GraphValidator::BuildOrderedDependentNodeList(GraphInstance& graph) {
+bool VCLG::GraphValidator::BuildOrderedDependentNodeList(GraphInstance& graph, std::vector<Node*>& nodes) {
     inPortToOutPort.clear();
     connectedOutPort.clear();
+    outPortToInPorts.clear();
 
     for (const Connection& connection : graph.GetConnections()) {
         Port* inPort = graph.GetPortByIdentity(connection.GetInputPortIdentity());
         Port* outPort = graph.GetPortByIdentity(connection.GetOutputPortIdentity());
         inPortToOutPort.insert({ inPort, outPort });
         connectedOutPort.insert({ outPort });
+        if (connection.GetConverter() == nullptr)
+            outPortToInPorts[outPort].push_back(inPort);
     }
 
-    std::vector<Node*> nodes{};
+    // Types are propagated in two sweeps: consumers to producers, then producers to consumers.
+    std::vector<Node*> executionOrder{};
+    if (!graph.BuildExecutionOrder(graph.GetNodes(), executionOrder))
+        return false;
 
-    std::queue<Node*> nodeToVisite{};
-
-    for (Node* node : graph.GetNodes()) {
-        bool isStubBack = true;
-        for (Port* outPort : Node::GetNodeOutputs(node)) {
-            if (connectedOutPort.count(outPort))
-                isStubBack = false;
-        }
-
-        if (isStubBack)
-            nodeToVisite.push(node);
-    }
-    
-    while (!nodeToVisite.empty()) {
-        Node* currentNode = nodeToVisite.front();
-        nodeToVisite.pop();
-
-        nodes.push_back(currentNode);
-
-        for (Port* inPort : Node::GetNodeInputs(currentNode)) {
-            if (!inPortToOutPort.count(inPort))
-                continue;
-            Port* connectedPort = inPortToOutPort[inPort];
-            Node* connectedNode = graph.GetNodeByIdentity(connectedPort->GetOwner());
-            nodeToVisite.push(connectedNode);
-        }
-    }
-
-    int32_t size = (int32_t)nodes.size();
-    for (int32_t i = size - 1; i >= 0; --i)
-        nodes.push_back(nodes[i]);
-
-    return std::move(nodes);
+    nodes.clear();
+    nodes.reserve(executionOrder.size() * 2);
+    nodes.insert(nodes.end(), executionOrder.rbegin(), executionOrder.rend());
+    nodes.insert(nodes.end(), executionOrder.begin(), executionOrder.end());
+    return true;
 }
 
 bool VCLG::GraphValidator::SubstituteType(Node* node, VCL::Type* baseType, VCL::Type* connectedType) {

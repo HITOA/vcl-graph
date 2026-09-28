@@ -15,7 +15,12 @@ namespace VCLG {
     class CodeGenGraph {
     public:
         CodeGenGraph() = delete;
-        CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module);
+        /**
+         * `manglingScope` prefixes the symbols of every node emitted here. Empty means the root graph
+         * ("g<graph identity>"). A subgraph passes the path of the SubgraphNode that uses it, so the
+         * same subgraph used twice gets two separate copies of its nodes' code and state.
+         */
+        CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module, std::string manglingScope = {});
         CodeGenGraph(const CodeGenGraph& other) = delete;
         CodeGenGraph(CodeGenGraph&& other) = delete;
         ~CodeGenGraph() = default;
@@ -39,10 +44,13 @@ namespace VCLG {
         void AddOutPortGlobalVar(Port* port, llvm::GlobalVariable* var);
 
         void ImportSubgraph(CodeGenGraph& codegen);
+
+        /** Mangling prefix for the CompilerInstances created for `node`: "<scope>/n<identity>". */
+        std::string GetNodeManglingPrefix(Node* node) const;
     
     private:
         void BuildPortMap();
-        std::vector<Node*> BuildOrderedNodeList();
+        bool BuildOrderedNodeList(std::vector<Node*>& nodes);
 
     private:
         std::unique_ptr<CodeGenEntrypoint> entrypoint;
@@ -50,6 +58,7 @@ namespace VCLG {
         GraphContext& graphContext;
         GraphInstance& graph;
         llvm::Module& module;
+        std::string manglingScope;
         VCL::CompilerContext cc;
         VCL::ModuleTable aggregatedImportedModuleTable;
         

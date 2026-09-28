@@ -56,6 +56,7 @@ void VCLG::SubgraphInputNode::Destroy() {
 bool VCLG::SubgraphInputNode::Emit(CodeGenGraph& codegen) {
     std::shared_ptr<VCL::CompilerInstance> instance = codegen.GetGraphContext().GetCompilerContext().CreateInstance();
     
+    instance->SetManglingPrefix(codegen.GetNodeManglingPrefix(this));
     instance->CreateASTContext();
     instance->CreateExportSymbolTable();
     instance->CreateImportModuleTable();
@@ -137,7 +138,8 @@ bool VCLG::SubgraphNode::Emit(CodeGenGraph& codegen) {
         }
     }
 
-    CodeGenGraph current{ instance->GetGraphContext(), *instance, codegen.GetLLVMModule() };
+    // Scoped under this SubgraphNode: the same subgraph used by another SubgraphNode gets its own symbols.
+    CodeGenGraph current{ instance->GetGraphContext(), *instance, codegen.GetLLVMModule(), codegen.GetNodeManglingPrefix(this) };
     if (!current.Emit())
         return false;
 
@@ -172,6 +174,7 @@ bool VCLG::SubgraphNode::Emit(CodeGenGraph& codegen) {
                 } else if (port->GetInitializerOverride()) {
                     VCL::Type* type = VCL::Type::GetCanonicalType(inputNode->GetOutputs()[0]->GetType());
                     std::shared_ptr<VCL::CompilerInstance> instance = codegen.GetGraphContext().GetCompilerContext().CreateInstance();
+                    instance->SetManglingPrefix(codegen.GetNodeManglingPrefix(this) + "/init");
                     instance->CreateASTContext();
                     instance->CreateExportSymbolTable();
                     instance->CreateImportModuleTable();
@@ -328,6 +331,7 @@ bool VCLG::FeedbackOutputNode::Emit(CodeGenGraph& codegen) {
     if (variable == nullptr) {
         std::shared_ptr<VCL::CompilerInstance> instance = codegen.GetGraphContext().GetCompilerContext().CreateInstance();
         
+        instance->SetManglingPrefix(codegen.GetNodeManglingPrefix(this));
         instance->CreateASTContext();
         instance->CreateExportSymbolTable();
         instance->CreateImportModuleTable();
