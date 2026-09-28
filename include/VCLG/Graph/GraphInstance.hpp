@@ -1,13 +1,11 @@
 #pragma once
 
-#include <VCLG/Core/Allocator.hpp>
 #include <VCLG/Core/IdentityProvider.hpp>
 #include <VCLG/Graph/GraphContext.hpp>
 #include <VCLG/Graph/GraphStorage.hpp>
 #include <VCLG/Graph/Port.hpp>
 #include <VCLG/Graph/Node.hpp>
 #include <VCLG/Graph/Connection.hpp>
-#include <VCLG/Graph/GraphUserDataTailAllocator.hpp>
 #include <VCLG/Graph/GraphValidator.hpp>
 
 #include <VCL/AST/Template.hpp>
@@ -26,9 +24,7 @@ namespace VCLG {
     class GraphInstance {
     public:
         GraphInstance() = delete;
-        GraphInstance(GraphContext& graphContext, Identity identity, 
-            std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTrailAllocator>(),
-            std::unique_ptr<Allocator> allocator = std::make_unique<TLSFAllocator>());
+        GraphInstance(GraphContext& graphContext, Identity identity);
         GraphInstance(const GraphInstance& other) = delete;
         GraphInstance(GraphInstance&& other) = delete;
         ~GraphInstance();
@@ -56,15 +52,10 @@ namespace VCLG {
 
         template<typename T, typename... Args>
         inline T* InstantiateBuiltinNode(Args&&... args) {
-            size_t nodeAdditionalDataSize = userDataTailAllocator->GetNodeUserDataAdditionalSize();
-            size_t nodeTotalSize = sizeof(T) + nodeAdditionalDataSize;
-            Identity instancedNodeIdentity = identityProvider.Next();
-            T* ptr = (T*)allocator->Allocate(nodeTotalSize, alignof(T));
-            new (ptr) T{ sizeof(T), *this, instancedNodeIdentity, std::forward<Args>(args)... };
+            std::unique_ptr<T> node = std::make_unique<T>(*this, identityProvider.Next(), std::forward<Args>(args)...);
+            T* ptr = node.get();
             ptr->Initialize();
-            void* userDataPtr = ((uint8_t*)ptr) + sizeof(T);
-            userDataTailAllocator->ConstructNodeUserData(ptr, userDataPtr);
-            storage.AddNode(ptr);
+            storage.AddNode(std::move(node));
             return ptr;
         }
 
@@ -96,13 +87,12 @@ namespace VCLG {
         inline const std::string& GetName() const { return name; }
         inline void SetName(const std::string& name) { this->name = name; }
 
-        inline void* GetUserDataPtr() const { return userDataPtr; }
-        inline void SetUserDataPtr(void* userDataPtr) { this->userDataPtr = userDataPtr; }
-
     private:
         void DestroyNodeConnections(Node* node);
         void DestroySourceNode(SourceNode* node);
         void DestroyBuiltinNode(BuiltinNode* node);
+        Port* CreatePort(Identity identity, Identity owner, VCL::Type* type, const std::string& displayName, 
+            Port::PortKind kind, VCL::ConstantValue* initializer, bool isDependent);
 
         Identity ConnectOutputToInput(Port* outPort, Port* inPort);
         Identity HasConnection(Port* outPort, Port* inPort);
@@ -115,16 +105,12 @@ namespace VCLG {
 
         GraphValidator validator;
 
-        std::unique_ptr<Allocator> allocator;
         IdentityProvider identityProvider;
         GraphStorage storage;
 
         std::vector<Connection> connections;
 
-        std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator;
-
         std::string name;
-        void* userDataPtr;
     };
 
 }

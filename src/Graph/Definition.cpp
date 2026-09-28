@@ -16,8 +16,8 @@
 #include <iostream>
 
 
-VCLG::DefinitionRegistry::DefinitionRegistry(VCL::CompilerContext& cc, std::unique_ptr<Allocator> allocator) : 
-        cc{ cc }, allocator{ std::move(allocator) }, definitions{} {
+VCLG::DefinitionRegistry::DefinitionRegistry(VCL::CompilerContext& cc) : 
+        cc{ cc }, definitions{} {
     
     nodeProcessAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("NodeProcess"), 0, 0);
     nodeResetAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("NodeReset"), 0, 0);
@@ -40,38 +40,14 @@ VCLG::DefinitionRegistry::~DefinitionRegistry() {
 }
 
 VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::GetOrCreateSourceNodeDefinition(VCL::Source* source) {
-    if (definitions.count(source->GetBufferIdentifier()))
-        return definitions[source->GetBufferIdentifier()];
+    if (auto it = definitions.find(source->GetBufferIdentifier()); it != definitions.end())
+        return it->second.get();
     return CreateSourceNodeDefinition(source);
 }
 
 void VCLG::DefinitionRegistry::Reset() {
-    for (llvm::StringRef str : definitions.keys()) {
-        SourceNodeDefinition* definition = definitions[str];
-        size_t size = SourceNodeDefinition::totalSizeToAlloc<SourcePortDefinition*, SourceParameterDefinition*, SourceAutoParameterDefinition*>(
-                definition->GetPorts().size(), definition->GetParameters().size(), definition->GetAutoParameters().size());
-        DestroyDefinitions(definition->GetPorts(), definition->GetParameters(), definition->GetAutoParameters());
-        // Also releases the CompilerInstance (and its AST) the definition was parsed with.
-        definition->~SourceNodeDefinition();
-        allocator->Deallocate(definition, size);
-    }
+    // Also releases the CompilerInstances (and their ASTs) the definitions were parsed with.
     definitions.clear();
-}
-
-void VCLG::DefinitionRegistry::DestroyDefinitions(llvm::ArrayRef<SourcePortDefinition*> ports,
-        llvm::ArrayRef<SourceParameterDefinition*> parameters, llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters) {
-    for (SourcePortDefinition* port : ports) {
-        port->~SourcePortDefinition();
-        allocator->Deallocate(port, sizeof(SourcePortDefinition));
-    }
-    for (SourceParameterDefinition* parameter : parameters) {
-        parameter->~SourceParameterDefinition();
-        allocator->Deallocate(parameter, sizeof(SourceParameterDefinition));
-    }
-    for (SourceAutoParameterDefinition* autoParameter : autoParameters) {
-        autoParameter->~SourceAutoParameterDefinition();
-        allocator->Deallocate(autoParameter, sizeof(SourceAutoParameterDefinition));
-    }
 }
 
 VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition(VCL::Source* source) {
@@ -86,10 +62,10 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
 
     VCL::TranslationUnitDecl* tu = instance->GetASTContext().GetTranslationUnitDecl();
 
-    llvm::SmallVector<SourcePortDefinition*> ports{};
-    llvm::SmallVector<SourcePortDefinition*> outPorts{};
-    llvm::SmallVector<SourceParameterDefinition*> parameters{};
-    llvm::SmallVector<SourceAutoParameterDefinition*> autoParameters{};
+    std::vector<SourcePortDefinition> ports{};
+    std::vector<SourcePortDefinition> outPorts{};
+    std::vector<SourceParameterDefinition> parameters{};
+    std::vector<SourceAutoParameterDefinition> autoParameters{};
     bool hasInstanceData = false;
     VCL::FunctionDecl* entrypoint = nullptr;
     VCL::FunctionDecl* reset = nullptr;
@@ -98,8 +74,6 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
         cc.GetDiagnosticReporter().Error(VCL::Diagnostic::NodeDefinitionError, std::string{ message } + " (" + source->GetBufferIdentifier().str() + ")")
             .SetCompilerInfo(__FILE__, __func__, __LINE__)
             .Report();
-        DestroyDefinitions(ports, parameters, autoParameters);
-        DestroyDefinitions(outPorts, {}, {});
         return nullptr;
     };
 
@@ -148,15 +122,14 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
     if (entrypoint == nullptr)
         return fail("no [NodeProcess] function");
 
-    ports.append(outPorts);
+    ports.insert(ports.end(), outPorts.begin(), outPorts.end());
 
     std::string displayName = GetStringDefine(instance, "NODE_NAME");
 
-    size_t portDefSize = SourceNodeDefinition::totalSizeToAlloc<
-        SourcePortDefinition*, SourceParameterDefinition*, SourceAutoParameterDefinition*>(ports.size(), parameters.size(), autoParameters.size());
-    SourceNodeDefinition* definition = (SourceNodeDefinition*)allocator->Allocate(portDefSize, 8);
-    new (definition) SourceNodeDefinition{ instance, displayName, entrypoint, reset, hasInstanceData, ports, parameters, autoParameters };
-    definitions.insert({ source->GetBufferIdentifier(), definition });
+    std::unique_ptr<SourceNodeDefinition> ownedDefinition = std::make_unique<SourceNodeDefinition>(instance, displayName, entrypoint, reset, 
+        hasInstanceData, std::move(ports), std::move(parameters), std::move(autoParameters));
+    SourceNodeDefinition* definition = ownedDefinition.get();
+    definitions.insert({ source->GetBufferIdentifier(), std::move(ownedDefinition) });
 
     if (HasFlagDefined(instance, "IS_GRAPH_INPUT"))
         definition->AddFlag(SourceNodeDefinition::DefinitionNodeFlag::IsInputNode);
@@ -166,8 +139,8 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
     return definition;
 }
 
-VCLG::SourcePortDefinition* VCLG::DefinitionRegistry::CreateSourcePortDefinition(VCL::VarDecl* varDecl, 
-        llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters) {
+VCLG::SourcePortDefinition VCLG::DefinitionRegistry::CreateSourcePortDefinition(VCL::VarDecl* varDecl, 
+        llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters) {
     std::string name = varDecl->GetIdentifierInfo()->GetName().str();
     std::string displayName = name;
     bool isInput = false;
@@ -183,12 +156,10 @@ VCLG::SourcePortDefinition* VCLG::DefinitionRegistry::CreateSourcePortDefinition
     VCL::Type* type = varDecl->GetValueType().GetType();
     bool isDependent = IsPortAutoParameterDependent(type, autoParameters);
 
-    SourcePortDefinition* definition = (SourcePortDefinition*)allocator->Allocate(sizeof(SourcePortDefinition), 8);
-    new (definition) SourcePortDefinition{ name, displayName, isInput, varDecl, isDependent};
-    return definition;
+    return SourcePortDefinition{ name, displayName, isInput, varDecl, isDependent };
 }
 
-VCLG::SourceParameterDefinition* VCLG::DefinitionRegistry::CreateSourceParameterDefinition(VCL::VarDecl* varDecl) {
+VCLG::SourceParameterDefinition VCLG::DefinitionRegistry::CreateSourceParameterDefinition(VCL::VarDecl* varDecl) {
     std::string name = varDecl->GetIdentifierInfo()->GetName().str();
     std::string displayName = name;
 
@@ -196,16 +167,11 @@ VCLG::SourceParameterDefinition* VCLG::DefinitionRegistry::CreateSourceParameter
         displayName = GetStringAttribute(attribute, varDecl).value_or(name);
     }
 
-    SourceParameterDefinition* definition = (SourceParameterDefinition*)allocator->Allocate(sizeof(SourceParameterDefinition), 8);
-    new (definition) SourceParameterDefinition{ name, displayName, varDecl };
-    return definition;
+    return SourceParameterDefinition{ name, displayName, varDecl };
 }
 
-VCLG::SourceAutoParameterDefinition* VCLG::DefinitionRegistry::CreateSourceAutoParameterDefinition(VCL::NamedDecl* decl) {
-    std::string name = decl->GetIdentifierInfo()->GetName().str();
-    SourceAutoParameterDefinition* definition = (SourceAutoParameterDefinition*)allocator->Allocate(sizeof(SourceAutoParameterDefinition), 8);
-    new (definition) SourceAutoParameterDefinition{ name, decl };
-    return definition;
+VCLG::SourceAutoParameterDefinition VCLG::DefinitionRegistry::CreateSourceAutoParameterDefinition(VCL::NamedDecl* decl) {
+    return SourceAutoParameterDefinition{ decl->GetIdentifierInfo()->GetName().str(), decl };
 }
 
 std::optional<std::string> VCLG::DefinitionRegistry::GetStringAttribute(VCL::AttributeInstance* attribute, VCL::Decl* decl) {
@@ -243,7 +209,7 @@ bool VCLG::DefinitionRegistry::HasFlagDefined(std::shared_ptr<VCL::CompilerInsta
     return value != nullptr;
 }
 
-bool VCLG::DefinitionRegistry::IsPortAutoParameterDependent(VCL::Type* portType, llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters) {
+bool VCLG::DefinitionRegistry::IsPortAutoParameterDependent(VCL::Type* portType, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters) {
     switch (portType->GetTypeClass()) {
         case VCL::Type::TypeAliasTypeClass:
             return IsTypeAliasPresentInAutoParameterList((VCL::TypeAliasType*)portType, autoParameters);
@@ -272,23 +238,23 @@ bool VCLG::DefinitionRegistry::IsPortAutoParameterDependent(VCL::Type* portType,
 }
 
 bool VCLG::DefinitionRegistry::IsTypeAliasPresentInAutoParameterList(VCL::TypeAliasType* type, 
-        llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters) {
-    for (SourceAutoParameterDefinition* autoParameter : autoParameters) {
-        if (autoParameter->GetDecl()->GetDeclClass() != VCL::Decl::TypeAliasDeclClass)
+        llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters) {
+    for (const SourceAutoParameterDefinition& autoParameter : autoParameters) {
+        if (autoParameter.GetDecl()->GetDeclClass() != VCL::Decl::TypeAliasDeclClass)
             continue;
-        if (((VCL::TypeAliasDecl*)autoParameter->GetDecl())->GetType() == type)
+        if (((VCL::TypeAliasDecl*)autoParameter.GetDecl())->GetType() == type)
             return true;
     }
     return false;
 }
 
 bool VCLG::DefinitionRegistry::IsExpressionDependentInAutoParameterList(VCL::Expr* expr, 
-        llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters) {
+        llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters) {
     if (expr->GetExprClass() != VCL::Expr::DeclRefExprClass)
         return false;
     VCL::Decl* decl = ((VCL::DeclRefExpr*)expr)->GetValueDecl();
-    for (SourceAutoParameterDefinition* autoParameter : autoParameters) {
-        if (autoParameter->GetDecl() == decl)
+    for (const SourceAutoParameterDefinition& autoParameter : autoParameters) {
+        if (autoParameter.GetDecl() == decl)
             return true;
     }
     return false;

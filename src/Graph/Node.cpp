@@ -51,9 +51,3 @@ void VCLG::SourceNode::NormalizePortAndParameterDisplayNameLength() {
         parameter->SetDisplayName(displayName);
     }
 }
-
-void* VCLG::Node::GetTrailingDataRawPtr() const {
-    if (const SourceNode* sourceNode = llvm::dyn_cast<SourceNode>(this))
-        return (void*)(sourceNode + 1);
-    return ((uint8_t*)this) + llvm::cast<BuiltinNode>(this)->GetSize();
-}

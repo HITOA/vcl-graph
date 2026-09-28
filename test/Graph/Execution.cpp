@@ -12,9 +12,9 @@ TEST_CASE_METHOD(Test::GraphTest, "Values flow through connections", "[Graph][Ex
 
     // Unconnected inputs take their initializer override, as Grog's port knobs do.
     VCL::ConstantScalar two{ 2.0f }, three{ 3.0f }, ten{ 10.0f };
-    first->GetInputs()[0]->SetInitializerOverride(&two);
-    first->GetInputs()[1]->SetInitializerOverride(&three);
-    second->GetInputs()[1]->SetInitializerOverride(&ten);
+    first->GetInputs()[0]->SetInitializerOverride(two);
+    first->GetInputs()[1]->SetInitializerOverride(three);
+    second->GetInputs()[1]->SetInitializerOverride(ten);
 
     Test::CompiledGraph compiled = Compile(*graph);
     compiled.Main();
@@ -28,8 +28,8 @@ TEST_CASE_METHOD(Test::GraphTest, "Parameters are compiled in", "[Graph][Executi
     scale->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
     VCL::ConstantScalar factor{ 4.0f }, input{ 3.0f };
     REQUIRE(scale->GetParameters().size() == 1);
-    scale->GetParameters()[0]->SetInitializerOverride(&factor);
-    scale->GetInputs()[0]->SetInitializerOverride(&input);
+    scale->GetParameters()[0]->SetInitializerOverride(factor);
+    scale->GetInputs()[0]->SetInitializerOverride(input);
 
     Test::CompiledGraph compiled = Compile(*graph);
     compiled.Main();
@@ -60,7 +60,7 @@ TEST_CASE_METHOD(Test::GraphTest, "A feedback loop sees the previous run's value
     auto* body = AddNode(*graph, "Add");
     body->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
     VCL::ConstantScalar one{ 1.0f };
-    body->GetInputs()[1]->SetInitializerOverride(&one);
+    body->GetInputs()[1]->SetInitializerOverride(one);
     REQUIRE(Connect(*graph, loopOut->GetOutputs()[0], body->GetInputs()[0]) != INVALID_IDENTITY);
     REQUIRE(Connect(*graph, body->GetOutputs()[0], loopIn->GetInputs()[0]) != INVALID_IDENTITY);
 

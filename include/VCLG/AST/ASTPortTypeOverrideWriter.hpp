@@ -14,7 +14,7 @@ namespace VCLG {
     class ASTPortTypeOverrideWriter : public VCL::ASTConsumer {
     public:
         ASTPortTypeOverrideWriter(VCL::ASTContext& astContext, VCL::IdentifierTable& identifierTable, 
-                llvm::ArrayRef<SourcePortDefinition*> definitions, llvm::ArrayRef<Port*> ports) :
+                llvm::ArrayRef<SourcePortDefinition> definitions, llvm::ArrayRef<Port*> ports) :
             astContext{ astContext }, identifierTable{ identifierTable }, definitions{ definitions }, ports{ ports } {}
 
         void HandleTopLevelDecl(VCL::Decl* decl) override;
@@ -23,7 +23,7 @@ namespace VCLG {
         VCL::ASTContext& astContext;
         VCL::IdentifierTable& identifierTable;
 
-        llvm::ArrayRef<SourcePortDefinition*> definitions;
+        llvm::ArrayRef<SourcePortDefinition> definitions;
         llvm::ArrayRef<Port*> ports;
     };
 

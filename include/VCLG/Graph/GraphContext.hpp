@@ -1,9 +1,7 @@
 #pragma once
 
-#include <VCLG/Core/Allocator.hpp>
 #include <VCLG/Core/IdentityProvider.hpp>
 #include <VCLG/Graph/Definition.hpp>
-#include <VCLG/Graph/GraphUserDataTailAllocator.hpp>
 #include <VCLG/Graph/Converter.hpp>
 
 #include <VCL/Frontend/CompilerContext.hpp>
@@ -34,9 +32,7 @@ namespace VCLG {
 
         void AddConverter(Converter* converter);
 
-        std::shared_ptr<GraphInstance> CreateInstance(
-            std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator = std::make_shared<GraphUserDataTrailAllocator>(),
-            std::unique_ptr<Allocator> allocator = std::make_unique<TLSFAllocator>());
+        std::shared_ptr<GraphInstance> CreateInstance();
 
     private:
         VCL::CompilerContext cc;

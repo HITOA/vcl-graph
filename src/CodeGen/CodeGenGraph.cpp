@@ -187,8 +187,8 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
     for (size_t i = 0; i < node->GetInputs().size(); ++i) {
         Port* inPort = node->GetInputs()[i];
 
-        SourcePortDefinition* inPortDefinition = nodeDefinition->GetPorts()[i];
-        std::optional<std::string> mangledName = instance->GetMangledSymbolName(inPortDefinition->GetName());
+        const SourcePortDefinition& inPortDefinition = nodeDefinition->GetPorts()[i];
+        std::optional<std::string> mangledName = instance->GetMangledSymbolName(inPortDefinition.GetName());
         if (!VCLG_CHECK(cc.GetDiagnosticReporter(), mangledName.has_value()))
             return false;
         llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value(), true);
@@ -227,8 +227,8 @@ bool VCLG::CodeGenGraph::EmitSourceNode(SourceNode* node) {
 
     for (size_t i = 0; i < node->GetOutputs().size(); ++i) {
         Port* outPort = node->GetOutputs()[i];
-        SourcePortDefinition* outPortDefinition = nodeDefinition->GetPorts()[i + node->GetInputs().size()];
-        std::optional<std::string> mangledName = instance->GetMangledSymbolName(outPortDefinition->GetName());
+        const SourcePortDefinition& outPortDefinition = nodeDefinition->GetPorts()[i + node->GetInputs().size()];
+        std::optional<std::string> mangledName = instance->GetMangledSymbolName(outPortDefinition.GetName());
         if (!VCLG_CHECK(cc.GetDiagnosticReporter(), mangledName.has_value()))
             return false;
 

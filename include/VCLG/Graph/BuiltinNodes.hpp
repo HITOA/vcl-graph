@@ -11,8 +11,8 @@ namespace VCLG {
 
     class SubgraphOutputNode final : public BuiltinNode {
     public:
-        SubgraphOutputNode(size_t size, GraphInstance& owner, Identity identity) : 
-                BuiltinNode{ NodeKind::SubgraphOutput, size, owner, "New Output", identity } {}
+        SubgraphOutputNode(GraphInstance& owner, Identity identity) : 
+                BuiltinNode{ NodeKind::SubgraphOutput, owner, "New Output", identity } {}
 
         static bool classof(const Node* node) { return node->GetKind() == NodeKind::SubgraphOutput; }
 
@@ -31,8 +31,8 @@ namespace VCLG {
      */
     class SubgraphInputNode final : public BuiltinNode {
     public:
-        SubgraphInputNode(size_t size, GraphInstance& owner, Identity identity, VCL::Type* type) : 
-                BuiltinNode{ NodeKind::SubgraphInput, size, owner, "New Input", identity }, type{ type } {}
+        SubgraphInputNode(GraphInstance& owner, Identity identity, VCL::Type* type) : 
+                BuiltinNode{ NodeKind::SubgraphInput, owner, "New Input", identity }, type{ type } {}
 
         static bool classof(const Node* node) { return node->GetKind() == NodeKind::SubgraphInput; }
 
@@ -52,8 +52,8 @@ namespace VCLG {
     public:
         using IdentityMap = llvm::DenseMap<VCLG::Identity, VCLG::Identity>;
 
-        SubgraphNode(size_t size, GraphInstance& owner, Identity identity) :
-            BuiltinNode{ NodeKind::Subgraph, size, owner, "Subgraph", identity }, instance{ nullptr }, nodeToPort{} {}
+        SubgraphNode(GraphInstance& owner, Identity identity) :
+            BuiltinNode{ NodeKind::Subgraph, owner, "Subgraph", identity }, instance{ nullptr }, nodeToPort{} {}
 
         static bool classof(const Node* node) { return node->GetKind() == NodeKind::Subgraph; }
         
@@ -72,8 +72,8 @@ namespace VCLG {
 
     class FeedbackInputNode final : public BuiltinNode {
     public:
-        FeedbackInputNode(size_t size, GraphInstance& owner, Identity identity) : 
-                BuiltinNode{ NodeKind::FeedbackInput, size, owner, "New Feedback Input", identity } {}
+        FeedbackInputNode(GraphInstance& owner, Identity identity) : 
+                BuiltinNode{ NodeKind::FeedbackInput, owner, "New Feedback Input", identity } {}
 
         static bool classof(const Node* node) { return node->GetKind() == NodeKind::FeedbackInput; }
 
@@ -88,8 +88,8 @@ namespace VCLG {
 
     class FeedbackOutputNode final : public BuiltinNode {
     public:
-        FeedbackOutputNode(size_t size, GraphInstance& owner, Identity identity) :
-            BuiltinNode{ NodeKind::FeedbackOutput, size, owner, "Feedback Output", identity }, feedbackIdentity{ INVALID_IDENTITY } {}
+        FeedbackOutputNode(GraphInstance& owner, Identity identity) :
+            BuiltinNode{ NodeKind::FeedbackOutput, owner, "Feedback Output", identity }, feedbackIdentity{ INVALID_IDENTITY } {}
 
         static bool classof(const Node* node) { return node->GetKind() == NodeKind::FeedbackOutput; }
         

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <VCLG/Core/Allocator.hpp>
-
 #include <VCL/Core/Source.hpp>
 #include <VCL/AST/Decl.hpp>
 #include <VCL/Frontend/CompilerContext.hpp>
@@ -9,29 +7,24 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
-#include <llvm/Support/TrailingObjects.h>
 
+#include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
 
 namespace VCLG {
     
     class SourcePortDefinition {
     public:
-        SourcePortDefinition() = delete;
         SourcePortDefinition(const std::string& name, const std::string& displayName, bool isInput, VCL::VarDecl* decl, bool isDependent) :
                 name{ name }, displayName{ displayName }, isInput{ isInput }, decl{ decl }, isDependent{ isDependent } {}
-        SourcePortDefinition(const SourcePortDefinition& other) = delete;
-        SourcePortDefinition(SourcePortDefinition&& other) = delete;
-        ~SourcePortDefinition() = default;
-
-        SourcePortDefinition& operator=(const SourcePortDefinition& other) = delete;
-        SourcePortDefinition& operator=(SourcePortDefinition&& other) = delete;
 
         inline const std::string& GetName() const { return name; }
         inline const std::string& GetDisplayName() const { return displayName; }
         inline bool IsInput() const { return isInput; }
-        inline VCL::VarDecl* GetDecl() { return decl; }
+        inline VCL::VarDecl* GetDecl() const { return decl; }
         inline bool IsDependent() const { return isDependent; }
 
     private:
@@ -44,19 +37,12 @@ namespace VCLG {
 
     class SourceParameterDefinition {
     public:
-        SourceParameterDefinition() = delete;
         SourceParameterDefinition(const std::string& name, const std::string& displayName, VCL::VarDecl* decl) :
                 name{ name }, displayName{ displayName }, decl{ decl } {}
-        SourceParameterDefinition(const SourceParameterDefinition& other) = delete;
-        SourceParameterDefinition(SourceParameterDefinition&& other) = delete;
-        ~SourceParameterDefinition() = default;
-
-        SourceParameterDefinition& operator=(const SourceParameterDefinition& other) = delete;
-        SourceParameterDefinition& operator=(SourceParameterDefinition&& other) = delete;
 
         inline const std::string& GetName() const { return name; }
         inline const std::string& GetDisplayName() const { return displayName; }
-        inline VCL::VarDecl* GetDecl() { return decl; }
+        inline VCL::VarDecl* GetDecl() const { return decl; }
 
     private:
         std::string name;
@@ -66,27 +52,22 @@ namespace VCLG {
 
     class SourceAutoParameterDefinition {
     public:
-        SourceAutoParameterDefinition() = delete;
         SourceAutoParameterDefinition(const std::string& name, VCL::Decl* decl) :
                 name{ name }, decl{ decl } {}
-        SourceAutoParameterDefinition(const SourceAutoParameterDefinition& other) = delete;
-        SourceAutoParameterDefinition(SourceAutoParameterDefinition&& other) = delete;
-        ~SourceAutoParameterDefinition() = default;
-
-        SourceAutoParameterDefinition& operator=(const SourceAutoParameterDefinition& other) = delete;
-        SourceAutoParameterDefinition& operator=(SourceAutoParameterDefinition&& other) = delete;
 
         inline const std::string& GetName() const { return name; }
-        inline VCL::Decl* GetDecl() { return decl; }
+        inline VCL::Decl* GetDecl() const { return decl; }
 
     private:
         std::string name;
         VCL::Decl* decl;
     };
 
-    class SourceNodeDefinition final : public llvm::TrailingObjects<SourceNodeDefinition, SourcePortDefinition*, SourceParameterDefinition*, SourceAutoParameterDefinition*> {
-        friend class TrailingObjects;
-    
+    /**
+     * What a node source declares: its ports (inputs first, then outputs), parameters and
+     * AutoParameters. Holds the CompilerInstance it was parsed with, which owns the decls.
+     */
+    class SourceNodeDefinition final {
     public:
         enum class DefinitionNodeFlag : uint32_t {
             None = 0,
@@ -97,15 +78,11 @@ namespace VCLG {
     public:
         SourceNodeDefinition() = delete;
         SourceNodeDefinition(std::shared_ptr<VCL::CompilerInstance> instance, const std::string& displayName, VCL::FunctionDecl* entrypoint, 
-            VCL::FunctionDecl* reset, bool hasInstanceData, llvm::ArrayRef<SourcePortDefinition*> ports, llvm::ArrayRef<SourceParameterDefinition*> parameters,
-            llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters) 
-                : instance{ instance }, displayName{ displayName }, entrypoint{ entrypoint }, reset{ reset }, hasInstanceData{ hasInstanceData }, 
-                    portCount{ ports.size() }, parameterCount{ parameters.size() }, autoParameterCount{ autoParameters.size() },
-                    flags{ (DefinitionNodeFlag)0 } {
-            std::uninitialized_copy(ports.begin(), ports.end(), getTrailingObjects<SourcePortDefinition*>());
-            std::uninitialized_copy(parameters.begin(), parameters.end(), getTrailingObjects<SourceParameterDefinition*>());
-            std::uninitialized_copy(autoParameters.begin(), autoParameters.end(), getTrailingObjects<SourceAutoParameterDefinition*>());
-        }
+            VCL::FunctionDecl* reset, bool hasInstanceData, std::vector<SourcePortDefinition> ports, std::vector<SourceParameterDefinition> parameters,
+            std::vector<SourceAutoParameterDefinition> autoParameters) 
+                : instance{ instance }, displayName{ displayName }, flags{ DefinitionNodeFlag::None }, entrypoint{ entrypoint }, reset{ reset },
+                    hasInstanceData{ hasInstanceData }, ports{ std::move(ports) }, parameters{ std::move(parameters) },
+                    autoParameters{ std::move(autoParameters) } {}
         SourceNodeDefinition(const SourceNodeDefinition& other) = delete;
         SourceNodeDefinition(SourceNodeDefinition&& other) = delete;
         ~SourceNodeDefinition() = default;
@@ -118,30 +95,14 @@ namespace VCLG {
         inline VCL::FunctionDecl* GetEntrypoint() const { return entrypoint; }
         inline VCL::FunctionDecl* GetReset() const { return reset; }
 
-        inline llvm::ArrayRef<SourcePortDefinition*> GetPorts() const { 
-            return { getTrailingObjects<SourcePortDefinition*>(), portCount }; }
-        inline llvm::ArrayRef<SourceParameterDefinition*> GetParameters() const { 
-            return { getTrailingObjects<SourceParameterDefinition*>(), parameterCount }; }
-        inline llvm::ArrayRef<SourceAutoParameterDefinition*> GetAutoParameters() const { 
-            return { getTrailingObjects<SourceAutoParameterDefinition*>(), autoParameterCount }; }
+        inline llvm::ArrayRef<SourcePortDefinition> GetPorts() const { return ports; }
+        inline llvm::ArrayRef<SourceParameterDefinition> GetParameters() const { return parameters; }
+        inline llvm::ArrayRef<SourceAutoParameterDefinition> GetAutoParameters() const { return autoParameters; }
 
         inline bool HasFlag(DefinitionNodeFlag flag) const { return ((uint32_t)flags & (uint32_t)flag) != 0; }
         inline void AddFlag(DefinitionNodeFlag flag) { this->flags = (DefinitionNodeFlag)((uint32_t)flags | (uint32_t)flag); }
         inline DefinitionNodeFlag GetFlag() const { return flags; }
     
-    private:
-        size_t numTrailingObjects(OverloadToken<SourcePortDefinition*>) const {
-            return portCount;
-        }        
-
-        size_t numTrailingObjects(OverloadToken<SourceParameterDefinition*>) const {
-            return parameterCount;
-        }
-
-        size_t numTrailingObjects(OverloadToken<SourceAutoParameterDefinition*>) const {
-            return autoParameterCount;
-        }
-
     private:
         std::shared_ptr<VCL::CompilerInstance> instance;
         std::string displayName;
@@ -149,15 +110,15 @@ namespace VCLG {
         VCL::FunctionDecl* entrypoint;
         VCL::FunctionDecl* reset;
         bool hasInstanceData;
-        size_t portCount;
-        size_t parameterCount;
-        size_t autoParameterCount;
+        std::vector<SourcePortDefinition> ports;
+        std::vector<SourceParameterDefinition> parameters;
+        std::vector<SourceAutoParameterDefinition> autoParameters;
     };
 
     class DefinitionRegistry : public llvm::RefCountedBase<DefinitionRegistry> {
     public:
         DefinitionRegistry() = delete;
-        DefinitionRegistry(VCL::CompilerContext& cc, std::unique_ptr<Allocator> allocator = std::make_unique<TLSFAllocator>());
+        DefinitionRegistry(VCL::CompilerContext& cc);
         DefinitionRegistry(const DefinitionRegistry& other) = delete;
         DefinitionRegistry(DefinitionRegistry&& other) = delete;
         ~DefinitionRegistry();
@@ -171,11 +132,9 @@ namespace VCLG {
 
     private:
         SourceNodeDefinition* CreateSourceNodeDefinition(VCL::Source* source);
-        SourcePortDefinition* CreateSourcePortDefinition(VCL::VarDecl* varDecl, llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters);
-        SourceParameterDefinition* CreateSourceParameterDefinition(VCL::VarDecl* varDecl);
-        SourceAutoParameterDefinition* CreateSourceAutoParameterDefinition(VCL::NamedDecl* decl);
-        void DestroyDefinitions(llvm::ArrayRef<SourcePortDefinition*> ports, llvm::ArrayRef<SourceParameterDefinition*> parameters,
-            llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters);
+        SourcePortDefinition CreateSourcePortDefinition(VCL::VarDecl* varDecl, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters);
+        SourceParameterDefinition CreateSourceParameterDefinition(VCL::VarDecl* varDecl);
+        SourceAutoParameterDefinition CreateSourceAutoParameterDefinition(VCL::NamedDecl* decl);
 
         /** The attribute's string argument; reports an error on `decl` and returns nullopt if it isn't a string. */
         std::optional<std::string> GetStringAttribute(VCL::AttributeInstance* attribute, VCL::Decl* decl);
@@ -183,14 +142,13 @@ namespace VCLG {
 
         bool HasFlagDefined(std::shared_ptr<VCL::CompilerInstance> instance, llvm::StringRef name);
 
-        bool IsPortAutoParameterDependent(VCL::Type* portType, llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters);
-        bool IsTypeAliasPresentInAutoParameterList(VCL::TypeAliasType* type, llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters);
-        bool IsExpressionDependentInAutoParameterList(VCL::Expr* expr, llvm::ArrayRef<SourceAutoParameterDefinition*> autoParameters);
+        bool IsPortAutoParameterDependent(VCL::Type* portType, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters);
+        bool IsTypeAliasPresentInAutoParameterList(VCL::TypeAliasType* type, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters);
+        bool IsExpressionDependentInAutoParameterList(VCL::Expr* expr, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters);
 
     private:
         VCL::CompilerContext& cc;
-        std::unique_ptr<Allocator> allocator;
-        llvm::StringMap<SourceNodeDefinition*> definitions;
+        llvm::StringMap<std::unique_ptr<SourceNodeDefinition>> definitions;
 
         VCL::AttributeDefinition* nodeProcessAttributeDefinition;
         VCL::AttributeDefinition* nodeResetAttributeDefinition;

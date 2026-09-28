@@ -76,17 +76,9 @@ namespace VCLG {
 
         void NormalizePortDisplayNameLength();
 
-        template<typename T>
-        inline T* GetTrailingData() {
-            return (T*)GetTrailingDataRawPtr();
-        }
-
     protected:
         // Public only on the kinds the user can rename (subgraph inputs/outputs, feedback inputs).
         inline void SetDisplayName(const std::string& name) { displayName = name; }
-
-    private:
-        void* GetTrailingDataRawPtr() const;
 
     private:
         NodeKind kind;
@@ -124,13 +116,12 @@ namespace VCLG {
     /**
      * Base of the nodes defined by vcl-graph itself rather than by a VCL source (see
      * BuiltinNodes.hpp). Expected to disappear: once emission moves into the compile passes
-     * (elaboration, VCL glue) and allocation no longer needs the node size, nothing is left here
-     * that Node doesn't have.
+     * (elaboration, VCL glue), nothing is left here that Node doesn't have.
      */
     class BuiltinNode : public Node {
     public:
-        BuiltinNode(NodeKind kind, size_t size, GraphInstance& owner, const std::string& displayName, Identity identity) : 
-            Node{ kind, identity, displayName }, size{ size }, owner{ owner } {};
+        BuiltinNode(NodeKind kind, GraphInstance& owner, const std::string& displayName, Identity identity) : 
+            Node{ kind, identity, displayName }, owner{ owner } {};
         virtual ~BuiltinNode() = default;
 
         static bool classof(const Node* node) {
@@ -141,12 +132,9 @@ namespace VCLG {
         virtual void Destroy() = 0;
         virtual bool Emit(CodeGenGraph& codegen) = 0;
 
-        inline size_t GetSize() const { return size; }
-
         inline GraphInstance& GetOwner() { return owner; }
 
     protected:
-        size_t size;
         GraphInstance& owner;
     };
 

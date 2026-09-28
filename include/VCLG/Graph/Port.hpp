@@ -5,6 +5,9 @@
 #include <VCL/AST/Type.hpp>
 #include <VCL/AST/ConstantValue.hpp>
 
+#include <optional>
+#include <string>
+
 
 namespace VCLG {
     class Node;
@@ -22,7 +25,7 @@ namespace VCLG {
                 bool isDependent, Identity identity) :
                 owner{ owner }, type{ type }, substitutedType{ nullptr }, tentativeType{ nullptr }, overrideType{ nullptr }, 
                 displayName{ displayName }, kind{ kind }, 
-                initializer{ initializer }, initializerOverride{ nullptr }, isDependent{ isDependent }, identity{ identity } {}
+                initializer{ initializer }, initializerOverride{}, isDependent{ isDependent }, identity{ identity } {}
         Port(const Port& other) = delete;
         Port(Port&& other) = delete;
         virtual ~Port() = default;
@@ -30,7 +33,13 @@ namespace VCLG {
         Port& operator=(const Port& other) = delete;
         Port& operator=(Port&& other) = delete;
 
-        inline void SetInitializerOverride(VCL::ConstantValue* value) { this->initializerOverride = value; }
+        /**
+         * The value the user gave this port, used while it is unconnected, in place of the declared
+         * initializer. GraphInstance creates it from the declared value (or zero) when the type is
+         * scalar; null otherwise.
+         */
+        inline VCL::ConstantScalar* GetInitializerOverride() { return initializerOverride ? &*initializerOverride : nullptr; }
+        inline void SetInitializerOverride(const VCL::ConstantScalar& value) { initializerOverride.emplace(value); }
 
         inline Identity GetOwner() const { return owner; }
         inline VCL::Type* GetType() const { return type; }
@@ -46,7 +55,6 @@ namespace VCLG {
         inline void SetDisplayName(const std::string& displayName) { this->displayName = displayName; }
         inline PortKind GetKind() const { return kind; }
         inline VCL::ConstantValue* GetInitializer() const { return initializer; }
-        inline VCL::ConstantValue* GetInitializerOverride() const { return initializerOverride; }
         inline bool IsDependent() const { return isDependent; }
         inline Identity GetIdentity() const { return identity; }
 
@@ -59,7 +67,7 @@ namespace VCLG {
         std::string displayName;
         PortKind kind;
         VCL::ConstantValue* initializer;
-        VCL::ConstantValue* initializerOverride;
+        std::optional<VCL::ConstantScalar> initializerOverride;
         bool isDependent;
         Identity identity;
     };

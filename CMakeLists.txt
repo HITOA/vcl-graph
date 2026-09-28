@@ -18,7 +18,6 @@ if (VCLG_SANITIZE)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/vcl)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/tlsf)
 
 add_library(vclg STATIC
     src/AST/ASTAutoParameterSubstitution.cpp
@@ -29,7 +28,6 @@ add_library(vclg STATIC
     src/CodeGen/Optimizer.cpp
     src/Core/Diagnostics.cpp
     src/Core/SubstitutionTable.cpp
-    src/Core/TLSFAllocator.cpp
     src/Graph/BuiltinNodes.cpp
     src/Graph/Definition.cpp
     src/Graph/Directives.cpp
@@ -45,7 +43,7 @@ if(CMAKE_BUILD_TYPE EQUAL "Release")
     set_property(TARGET vclg PROPERTY COMPILE_WARNING_AS_ERROR ON)
 endif()
 
-target_link_libraries(vclg PUBLIC vcl tlsf)
+target_link_libraries(vclg PUBLIC vcl)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/example)
 

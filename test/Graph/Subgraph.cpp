@@ -83,14 +83,14 @@ TEST_CASE_METHOD(Test::GraphTest, "Values flow into and out of a subgraph", "[Gr
     auto* add = AddNode(*sub, "Add");
     auto* out = sub->InstantiateBuiltinNode<VCLG::SubgraphOutputNode>();
     VCL::ConstantScalar one{ 1.0f };
-    add->GetInputs()[1]->SetInitializerOverride(&one);
+    add->GetInputs()[1]->SetInitializerOverride(one);
     REQUIRE(sub->Connect(in->GetOutputs()[0], add->GetInputs()[0]) != INVALID_IDENTITY);
     REQUIRE(sub->Connect(add->GetOutputs()[0], out->GetInputs()[0]) != INVALID_IDENTITY);
 
     auto root = context.CreateInstance();
     auto* source = AddNode(*root, "Add");
     VCL::ConstantScalar five{ 5.0f };
-    source->GetInputs()[0]->SetInitializerOverride(&five);
+    source->GetInputs()[0]->SetInitializerOverride(five);
     auto* use = root->InstantiateBuiltinNode<VCLG::SubgraphNode>();
     use->SetGraph(sub);
     auto* sink = AddNode(*root, "Add");

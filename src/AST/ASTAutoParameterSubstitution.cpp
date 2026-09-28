@@ -9,7 +9,7 @@ void VCLG::ASTAutoParameterSubstitution::HandleTopLevelDecl(VCL::Decl* decl) {
     switch (decl->GetDeclClass()) {
         case VCL::Decl::TypeAliasDeclClass: {
             VCL::TypeAliasDecl* typeAliasDecl = (VCL::TypeAliasDecl*)decl;
-            SourceAutoParameterDefinition* autoParam = GetAutoParamFromDecl(typeAliasDecl);
+            const SourceAutoParameterDefinition* autoParam = GetAutoParamFromDecl(typeAliasDecl);
             if (!autoParam)
                 return;
             VCL::Type* type = table.GetTypeSubstitution((VCL::TypeAliasDecl*)autoParam->GetDecl());
@@ -20,7 +20,7 @@ void VCLG::ASTAutoParameterSubstitution::HandleTopLevelDecl(VCL::Decl* decl) {
         }
         case VCL::Decl::VarDeclClass: {
             VCL::VarDecl* varDecl = (VCL::VarDecl*)decl;
-            SourceAutoParameterDefinition* autoParam = GetAutoParamFromDecl(varDecl);
+            const SourceAutoParameterDefinition* autoParam = GetAutoParamFromDecl(varDecl);
             if (!autoParam)
                 return;
             VCL::ConstantScalar* scalar = table.GetScalarSubstitution((VCL::VarDecl*)autoParam->GetDecl());
@@ -54,11 +54,11 @@ void VCLG::ASTAutoParameterSubstitution::HandleTopLevelDecl(VCL::Decl* decl) {
     }
 }
 
-VCLG::SourceAutoParameterDefinition* VCLG::ASTAutoParameterSubstitution::GetAutoParamFromDecl(VCL::NamedDecl* decl) {
-    for (SourceAutoParameterDefinition* autoParam : autoParameters) {
-        VCL::NamedDecl* namedDecl = (VCL::NamedDecl*)autoParam->GetDecl();
+const VCLG::SourceAutoParameterDefinition* VCLG::ASTAutoParameterSubstitution::GetAutoParamFromDecl(VCL::NamedDecl* decl) {
+    for (const SourceAutoParameterDefinition& autoParam : autoParameters) {
+        VCL::NamedDecl* namedDecl = (VCL::NamedDecl*)autoParam.GetDecl();
         if (namedDecl->GetIdentifierInfo() == decl->GetIdentifierInfo())
-            return autoParam;
+            return &autoParam;
     }
     return nullptr;
 }

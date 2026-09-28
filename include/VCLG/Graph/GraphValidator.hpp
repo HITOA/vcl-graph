@@ -1,13 +1,11 @@
 #pragma once
 
 #include <VCLG/Core/SubstitutionTable.hpp>
-#include <VCLG/Core/Allocator.hpp>
 #include <VCLG/Core/IdentityProvider.hpp>
 #include <VCLG/Graph/GraphStorage.hpp>
 #include <VCLG/Graph/Port.hpp>
 #include <VCLG/Graph/Node.hpp>
 #include <VCLG/Graph/Connection.hpp>
-#include <VCLG/Graph/GraphUserDataTailAllocator.hpp>
 #include <VCLG/Graph/GraphValidator.hpp>
 
 #include <VCL/AST/Template.hpp>

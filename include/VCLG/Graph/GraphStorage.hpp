@@ -1,6 +1,5 @@
 #pragma once
 
-#include <VCLG/Core/Allocator.hpp>
 #include <VCLG/Core/IdentityProvider.hpp>
 #include <VCLG/Graph/Node.hpp>
 #include <VCLG/Graph/Port.hpp>
@@ -16,10 +15,14 @@
 
 namespace VCLG {
     class Node;
- 
+
+    /**
+     * Owns the nodes, ports and parameters of a graph, and finds them by identity. Nodes keep plain
+     * pointers to their ports and parameters: GraphInstance destroys those along with the node.
+     */
     class GraphStorage {
     public:
-        GraphStorage() : nodes{}, identityToNode{}, identityToPort{} {}
+        GraphStorage() = default;
         GraphStorage(const GraphStorage& other) = delete;
         GraphStorage(GraphStorage&& other) = delete;
         ~GraphStorage() = default;
@@ -27,63 +30,67 @@ namespace VCLG {
         GraphStorage& operator=(const GraphStorage& other) = delete;
         GraphStorage& operator=(GraphStorage&& other) = delete;
 
-        inline void AddNode(Node* node) { 
-            nodes.push_back(node);
-            identityToNode.insert({ node->GetIdentity(), node });
+        inline Node* AddNode(std::unique_ptr<Node> node) {
+            Node* ptr = node.get();
+            nodes.push_back(ptr);
+            identityToNode.insert({ ptr->GetIdentity(), std::move(node) });
+            return ptr;
         }
 
-        inline void RemoveNode(Node* node) {
-            if (!identityToNode.count(node->GetIdentity()))
-                return;
-            identityToNode.erase(node->GetIdentity());
-            auto it = std::find(nodes.begin(), nodes.end(), node);
-            if (it != nodes.end())
-                nodes.erase(it);
+        /** Unregister `node` and hand back its ownership (null if it isn't in this storage). */
+        inline std::unique_ptr<Node> RemoveNode(Node* node) {
+            auto it = identityToNode.find(node->GetIdentity());
+            if (it == identityToNode.end())
+                return nullptr;
+            std::unique_ptr<Node> owned = std::move(it->second);
+            identityToNode.erase(it);
+            nodes.erase(std::find(nodes.begin(), nodes.end(), node));
+            return owned;
         }
 
         inline Node* GetNodeByIdentity(Identity identity) const {
-            if (identityToNode.count(identity))
-                return identityToNode.at(identity);
-            return nullptr;
+            auto it = identityToNode.find(identity);
+            return it != identityToNode.end() ? it->second.get() : nullptr;
         }
 
-        inline void AddPort(Port* port) {
-            identityToPort.insert({ port->GetIdentity(), port });
+        inline Port* AddPort(std::unique_ptr<Port> port) {
+            Port* ptr = port.get();
+            identityToPort.insert({ ptr->GetIdentity(), std::move(port) });
+            return ptr;
         }
 
         inline void RemovePort(Port* port) {
-            if (identityToPort.count(port->GetIdentity()))
-                identityToPort.erase(port->GetIdentity());
+            identityToPort.erase(port->GetIdentity());
         }
 
         inline Port* GetPortByIdentity(Identity identity) const {
-            if (identityToPort.count(identity))
-                return identityToPort.at(identity);
-            return nullptr;
+            auto it = identityToPort.find(identity);
+            return it != identityToPort.end() ? it->second.get() : nullptr;
         }
 
-        inline void AddParameter(Parameter* parameter) {
-            identityToParameter.insert({ parameter->GetIdentity(), parameter });
+        inline Parameter* AddParameter(std::unique_ptr<Parameter> parameter) {
+            Parameter* ptr = parameter.get();
+            identityToParameter.insert({ ptr->GetIdentity(), std::move(parameter) });
+            return ptr;
         }
 
         inline void RemoveParameter(Parameter* parameter) {
-            if (identityToParameter.count(parameter->GetIdentity()))
-                identityToParameter.erase(parameter->GetIdentity());
+            identityToParameter.erase(parameter->GetIdentity());
         }
 
         inline Parameter* GetParameterByIdentity(Identity identity) const {
-            if (identityToParameter.count(identity))
-                return identityToParameter.at(identity);
-            return nullptr;
+            auto it = identityToParameter.find(identity);
+            return it != identityToParameter.end() ? it->second.get() : nullptr;
         }
 
         inline llvm::ArrayRef<Node*> GetNodes() const { return nodes; }
-        
+
     private:
-        std::vector<Node*> nodes;
-        llvm::DenseMap<Identity, Node*> identityToNode;
-        llvm::DenseMap<Identity, Port*> identityToPort;
-        llvm::DenseMap<Identity, Parameter*> identityToParameter;
+        // Creation order, which callers (serialization, the UI) see.
+        std::vector<Node*> nodes{};
+        llvm::DenseMap<Identity, std::unique_ptr<Node>> identityToNode{};
+        llvm::DenseMap<Identity, std::unique_ptr<Port>> identityToPort{};
+        llvm::DenseMap<Identity, std::unique_ptr<Parameter>> identityToParameter{};
     };
 
 }

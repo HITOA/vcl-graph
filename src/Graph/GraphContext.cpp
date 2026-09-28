@@ -23,8 +23,6 @@ void VCLG::GraphContext::AddConverter(Converter* converter) {
     converter->SetGraphContext(this);
 }
 
-std::shared_ptr<VCLG::GraphInstance> VCLG::GraphContext::CreateInstance(
-            std::shared_ptr<GraphUserDataTrailAllocator> userDataTailAllocator,
-            std::unique_ptr<Allocator> allocator) {
-    return std::make_shared<GraphInstance>(*this, identityProvider.Next(), userDataTailAllocator, std::move(allocator));
+std::shared_ptr<VCLG::GraphInstance> VCLG::GraphContext::CreateInstance() {
+    return std::make_shared<GraphInstance>(*this, identityProvider.Next());
 }
