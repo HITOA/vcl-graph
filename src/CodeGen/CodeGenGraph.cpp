@@ -6,6 +6,7 @@
 #include <VCLG/AST/ASTParameterWriter.hpp>
 #include <VCLG/AST/ASTAutoParameterSubstitution.hpp>
 #include <VCLG/AST/ASTPortTypeOverrideWriter.hpp>
+#include <VCLG/AST/ASTInputConstWriter.hpp>
 #include <VCLG/Core/Diagnostics.hpp>
 
 #include <VCL/Core/SourceManager.hpp>
@@ -217,10 +218,13 @@ bool VCLG::CodeGenGraph::EmitSourceNode(NodeIndex index) {
         instance->GetCompilerContext().GetIdentifierTable(), 
         nodeDefinition->GetPorts(), portTypeOverrides };
 
+    ASTInputConstWriter inputConstWriter{ graphContext.GetDefinitionRegistry().GetInputAttributeDefinition() };
+
     VCL::MultiplexerASTConsumer astConsumer{};
     astConsumer.PushConsumer(&parameterWriter);
     astConsumer.PushConsumer(&autoParameterWriter);
     astConsumer.PushConsumer(&portWriter);
+    astConsumer.PushConsumer(&inputConstWriter); // after portWriter, which replaces some input types
 
     parser.SetASTConsumer(&astConsumer);
     
@@ -238,6 +242,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(NodeIndex index) {
         instance->GetImportModuleTable(),
         instance->GetCompilerContext().GetAttributeTable(),
         instance->GetCompilerContext().GetIdentifierTable() };
+    cgm.SetOptions(instance->GetCompilerContext().GetInvocation()->GetCodeGenOptions());
     if (!cgm.Emit(false))
         return false;
 
@@ -251,6 +256,9 @@ bool VCLG::CodeGenGraph::EmitSourceNode(NodeIndex index) {
         llvm::GlobalVariable* variable = module.getGlobalVariable(mangledName.value(), true);
         if (!VCLG_CHECK(cc.GetDiagnosticReporter(), variable != nullptr))
             return false;
+        // The input is const for the node (ASTInputConstWriter), but not for the graph: a converter
+        // writes into it before the node runs.
+        variable->setConstant(false);
 
         if (!input.edge) {
             if (input.initializer)

@@ -130,6 +130,8 @@ namespace VCLG {
 
         void Reset();
 
+        inline VCL::AttributeDefinition* GetInputAttributeDefinition() const { return inputAttributeDefinition; }
+
     private:
         SourceNodeDefinition* CreateSourceNodeDefinition(VCL::Source* source);
         SourcePortDefinition CreateSourcePortDefinition(VCL::VarDecl* varDecl, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters);

@@ -10,6 +10,9 @@
 //     `<node>\t<status>\t<checksum>\t<compile + JIT time, ms>`;
 //   - GROG_SMOKE_REFERENCE: a file written by GROG_SMOKE_OUT with another build; each node's status
 //     and checksum must match it (equivalence of two codegens, on one machine).
+//   - GROG_SMOKE_DUMP: a directory; the first run of each node writes the bytes it hashes to
+//     `<node>.bin` there (with `/` in the node name replaced by `_`), to compare two builds sample by
+//     sample when their checksums differ.
 
 #include "Common/GraphTest.hpp"
 
@@ -247,7 +250,7 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
         // Compiles and runs the graph in a new session: Reset, then CallsPerRun calls to Main,
         // hashing the outputs after each call. Returns the status.
         VCLG::SourceNodeDefinition* definition = context.GetDefinitionRegistry().GetOrCreateSourceNodeDefinition(source);
-        auto compileAndRun = [&](uint64_t& checksum, double& compileMs) -> std::string {
+        auto compileAndRun = [&](uint64_t& checksum, double& compileMs, std::ostream* dump) -> std::string {
             llvm::orc::ThreadSafeModule module{
                 cc.GetLLVMContext().withContextDo([](llvm::LLVMContext* c) {
                     return std::make_unique<llvm::Module>("smoke", *c);
@@ -309,8 +312,11 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
             for (uint32_t call = 0; call < CallsPerRun; ++call) {
                 host.Prepare(call);
                 main();
-                for (const auto& [address, size] : outputData)
+                for (const auto& [address, size] : outputData) {
                     sum.Add(address, size);
+                    if (dump)
+                        dump->write((const char*)address, (std::streamsize)size);
+                }
             }
             checksum = sum.value;
             return "ok";
@@ -318,10 +324,17 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
 
         // Twice, from scratch: the result must not depend on anything but the graph.
         uint64_t checksums[2]{};
-        std::string status = compileAndRun(checksums[0], result.compileMs);
+        std::unique_ptr<std::ofstream> dump{};
+        if (const char* dumpDirectory = std::getenv("GROG_SMOKE_DUMP")) {
+            std::string fileName = name;
+            std::replace(fileName.begin(), fileName.end(), '/', '_');
+            dump = std::make_unique<std::ofstream>(std::filesystem::path{ dumpDirectory } / (fileName + ".bin"),
+                std::ios::binary | std::ios::trunc);
+        }
+        std::string status = compileAndRun(checksums[0], result.compileMs, dump.get());
         double ignored = 0.0;
         if (status == "ok")
-            status = compileAndRun(checksums[1], ignored);
+            status = compileAndRun(checksums[1], ignored, nullptr);
         if (status == "ok" && checksums[0] != checksums[1])
             status = "nondeterministic";
         result.checksum = checksums[0];

@@ -73,3 +73,36 @@ TEST_CASE_METHOD(Test::GraphTest, "A feedback loop sees the previous run's value
     compiled.Main();
     REQUIRE(*output == 3.0f);
 }
+
+TEST_CASE_METHOD(Test::GraphTest, "A feedback loop of a type inferred from AutoParameters", "[Graph][Execution]") {
+    // StereoSource -> BlockGain -> Feedback Input; Feedback Output -> BlockGain (output). The loop's
+    // type, Block<float32, 2>, exists only as the elaborated type of the first BlockGain's output.
+    auto graph = context.CreateInstance();
+    auto* loopIn = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
+    auto* loopOut = graph->InstantiateBuiltinNode<VCLG::FeedbackOutputNode>();
+    loopOut->Update(loopIn->GetIdentity());
+    auto* source = AddNode(*graph, "StereoSource");
+    auto* gain = AddNode(*graph, "BlockGain");
+    REQUIRE(Connect(*graph, source->GetOutputs()[0], gain->GetInputs()[0]) != INVALID_IDENTITY);
+    REQUIRE(Connect(*graph, gain->GetOutputs()[0], loopIn->GetInputs()[0]) != INVALID_IDENTITY);
+
+    // Relinking the Feedback Output (as Grog does after every connection to a Feedback Input) takes
+    // the new type; it used to crash on a type without a canonical form.
+    loopOut->Update(loopIn->GetIdentity());
+    REQUIRE(loopOut->GetOutputs().size() == 1);
+    // ...and that type has a canonical form (the instantiation of Block<float32, 2>).
+    REQUIRE(VCL::Type::GetCanonicalType(loopOut->GetOutputs()[0]->GetType()) != nullptr);
+
+    auto* sink = AddNode(*graph, "BlockGain");
+    sink->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
+    REQUIRE(Connect(*graph, loopOut->GetOutputs()[0], sink->GetInputs()[0]) != INVALID_IDENTITY);
+
+    // The sink is a side branch of the loop: whether it reads this call's value or the previous
+    // one depends on the execution order today (plan P4.4), so only the steady state is checked.
+    Test::CompiledGraph compiled = Compile(*graph);
+    float* output = compiled.Global<float>(NodeSymbol(*graph, sink, "output"));
+    for (int i = 0; i < 3; ++i)
+        compiled.Main();
+    REQUIRE(output[0] == 0.25f);
+    REQUIRE(output[1] == 0.5f);
+}

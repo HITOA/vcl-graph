@@ -21,6 +21,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/vcl)
 
 add_library(vclg STATIC
     src/AST/ASTAutoParameterSubstitution.cpp
+    src/AST/ASTInputConstWriter.cpp
     src/AST/ASTParameterWriter.cpp
     src/AST/ASTPortTypeOverrideWriter.cpp
     src/CodeGen/CodeGenEntrypoint.cpp

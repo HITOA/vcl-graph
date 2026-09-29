@@ -515,6 +515,43 @@ bool VCLG::Elaborator::SubstituteExpression(NodeIndex index, VCL::DeclRefExpr* b
     return true;
 }
 
+// A substituted type is a new specialization, with its arguments as substituted (e.g. an alias, or a
+// constant in place of a named one), which nothing instantiates: it has no canonical form, and code
+// calling GetCanonicalType on a port type (the editor, converters) gets null. Its canonical
+// specialization usually is instantiated, by the node that declared the connected port: take that
+// instantiation, as Sema does for a specialization written with non-canonical arguments. Otherwise
+// the type stays without one (the node's own compile instantiates its ports).
+static void AdoptCanonicalInstantiation(VCL::ASTContext& context, VCL::TemplateSpecializationType* type) {
+    llvm::SmallVector<VCL::TemplateArgument> args{};
+    for (const VCL::TemplateArgument& arg : type->GetTemplateArgumentList()->GetArgs()) {
+        switch (arg.GetKind()) {
+            case VCL::TemplateArgument::Type: {
+                VCL::Type* canonical = VCL::Type::GetCanonicalType(arg.GetType().GetType());
+                if (canonical == nullptr)
+                    return;
+                args.push_back(VCL::TemplateArgument{ VCL::QualType{ canonical, arg.GetType().GetQualifiers() } });
+                break;
+            }
+            case VCL::TemplateArgument::Expression: {
+                VCL::ConstantValue* value = arg.GetExpr()->GetConstantValue();
+                if (value == nullptr || value->GetConstantValueClass() != VCL::ConstantValue::ConstantScalarClass)
+                    return;
+                args.push_back(VCL::TemplateArgument{ *(VCL::ConstantScalar*)value });
+                break;
+            }
+            default:
+                args.push_back(arg);
+                break;
+        }
+    }
+    VCL::TemplateArgumentList* canonicalArgs =
+        VCL::TemplateArgumentList::Create(context, args, type->GetTemplateArgumentList()->GetSourceRange());
+    VCL::TemplateSpecializationType* canonical =
+        context.GetTypeCache().GetOrCreateTemplateSpecializationType(type->GetTemplateDecl(), canonicalArgs);
+    if (canonical->GetInstantiatedType() != nullptr)
+        type->SetInstantiatedType(canonical->GetInstantiatedType());
+}
+
 VCL::Type* VCLG::Elaborator::GenerateSubstitutedType(NodeIndex index, VCL::Type* baseType) {
     const SubstitutionTable& table = result.nodes[index].substitutions;
     VCL::ASTContext& globalASTContext = context.GetGlobalASTContext();
@@ -561,7 +598,11 @@ VCL::Type* VCLG::Elaborator::GenerateSubstitutedType(NodeIndex index, VCL::Type*
             }
             VCL::TemplateArgumentList* substitutedArgList =
                 VCL::TemplateArgumentList::Create(globalASTContext, substitutedArgs, argList->GetSourceRange());
-            return globalASTContext.GetTypeCache().GetOrCreateTemplateSpecializationType(speType->GetTemplateDecl(), substitutedArgList);
+            VCL::TemplateSpecializationType* substitutedType =
+                globalASTContext.GetTypeCache().GetOrCreateTemplateSpecializationType(speType->GetTemplateDecl(), substitutedArgList);
+            if (substitutedType->GetInstantiatedType() == nullptr)
+                AdoptCanonicalInstantiation(globalASTContext, substitutedType);
+            return substitutedType;
         }
         default:
             return baseType;

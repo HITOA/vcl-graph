@@ -1,6 +1,7 @@
 #include <VCLG/Graph/Definition.hpp>
 
 #include <VCLG/Graph/Directives.hpp>
+#include <VCLG/AST/ASTInputConstWriter.hpp>
 #include <VCLG/Core/Diagnostics.hpp>
 
 #include <VCL/Core/Diagnostic.hpp>
@@ -51,7 +52,10 @@ void VCLG::DefinitionRegistry::Reset() {
 }
 
 VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition(VCL::Source* source) {
+    // Inputs are read-only: a node writing one is rejected when it's loaded.
+    ASTInputConstWriter inputConstWriter{ inputAttributeDefinition };
     VCL::ParseSyntaxOnlyAction action{};
+    action.SetASTConsumer(&inputConstWriter);
 
     std::shared_ptr<VCL::CompilerInstance> instance = cc.CreateInstance();
     instance->BeginSource(source);

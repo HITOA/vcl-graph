@@ -30,7 +30,11 @@ static std::optional<VCL::ConstantScalar> GetDefaultInitializerOverride(VCL::Typ
         return *(VCL::ConstantScalar*)initializer;
     }
 
+    // No canonical form: a template specialization not instantiated (yet), e.g. an elaborated type.
+    // Such types are aggregates, which have no default value to edit anyway.
     type = VCL::Type::GetCanonicalType(type);
+    if (type == nullptr)
+        return std::nullopt;
     if (type->GetTypeClass() == VCL::Type::VectorTypeClass)
         type = ((VCL::VectorType*)type)->GetElementType().GetType();
     if (throughLanes && type->GetTypeClass() == VCL::Type::LanesTypeClass)
