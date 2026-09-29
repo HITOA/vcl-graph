@@ -13,6 +13,7 @@ add_executable(vclg_test
     Graph/Mangling.cpp
     Graph/Order.cpp
     Graph/Subgraph.cpp
+    Library/Smoke.cpp
 )
 target_link_libraries(vclg_test PRIVATE vclg Catch2::Catch2WithMain)
 target_include_directories(vclg_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
