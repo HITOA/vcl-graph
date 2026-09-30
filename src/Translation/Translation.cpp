@@ -18,6 +18,7 @@
 #include <llvm/IR/IntrinsicInst.h>
 #include <llvm/Linker/Linker.h>
 #include <llvm/Passes/PassBuilder.h>
+#include <llvm/Support/xxhash.h>
 #include <llvm/Transforms/Utils/Cloning.h>
 
 
@@ -219,6 +220,7 @@ std::optional<VCLG::TranslatedNode> VCLG::TranslateSourceNode(GraphContext& grap
     translated.translationUnit = context.translationUnit;
     NodeInterface& interface = translated.interface;
     interface.definition = node.definition;
+    interface.sourceHash = llvm::xxh3_64bits(source->GetBufferRef().getBuffer());
     interface.process = ast.GetMangledName(context.process);
     interface.reset = context.reset ? ast.GetMangledName(context.reset) : std::string{};
     interface.init = ast.GetMangledName(context.init);

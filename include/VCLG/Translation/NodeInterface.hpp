@@ -47,6 +47,8 @@ namespace VCLG {
         };
 
         const SourceNodeDefinition* definition = nullptr;
+        /** Hash of the source text the variant was compiled from: edited source, new signature (§6.3). */
+        uint64_t sourceHash = 0;
 
         /** Symbols of the entry points; `reset` is empty when the node has no `[NodeReset]`. */
         std::string process{};

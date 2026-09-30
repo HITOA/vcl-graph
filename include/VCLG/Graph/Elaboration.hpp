@@ -113,6 +113,13 @@ namespace VCLG {
             /** Path of the SubgraphNode ("g1/n3"), or of the root graph ("g1"). */
             std::string path;
             std::string displayName;
+            /**
+             * The graph whose nodes this scope copies, and its generation (`GraphInstance::
+             * GetGeneration`): node identities, hence paths, only mean the same node within one
+             * generation of one graph.
+             */
+            Identity graph;
+            uint64_t generation;
         };
 
         /**

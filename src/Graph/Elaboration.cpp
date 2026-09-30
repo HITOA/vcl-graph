@@ -96,7 +96,8 @@ VCLG::ElaboratedGraph VCLG::Elaborate(GraphInstance& root) {
 }
 
 void VCLG::Elaborator::Run(GraphInstance& root) {
-    result.scopes.push_back({ Invalid, "g" + std::to_string(root.GetIdentity()), root.GetName() });
+    result.scopes.push_back({ Invalid, "g" + std::to_string(root.GetIdentity()), root.GetName(), root.GetIdentity(),
+        root.GetGeneration() });
     scopeOutputNodes.emplace_back();
 
     IdentityMap byIdentity{};
@@ -148,7 +149,7 @@ bool VCLG::Elaborator::Flatten(GraphInstance& graph, ScopeIndex scope, PortMap& 
 
         ScopeIndex childScope = (ScopeIndex)result.scopes.size();
         result.scopes.push_back({ scope, result.scopes[scope].path + "/n" + std::to_string(node->GetIdentity()),
-            node->GetDisplayName().str() });
+            node->GetDisplayName().str(), subgraph->GetIdentity(), subgraph->GetGeneration() });
         scopeOutputNodes.emplace_back();
 
         PortMap childPorts{};

@@ -7,6 +7,7 @@
 #include <VCLG/Graph/BuiltinNodes.hpp>
 #include <VCLG/Graph/Elaboration.hpp>
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
+#include <VCLG/CodeGen/Migration.hpp>
 #include <VCLG/CodeGen/Optimizer.hpp>
 #include <VCLG/CodeGen/SlotPlanner.hpp>
 #include <VCLG/Core/Diagnostics.hpp>
@@ -135,6 +136,14 @@ namespace Test {
             return values;
         }
     };
+
+    // What Grog does when it swaps a recompiled graph in: `to` (already Reset) takes over the
+    // regions of `from` that are unchanged.
+    inline VCLG::MigrationPlan Migrate(const CompiledGraph& from, CompiledGraph& to) {
+        VCLG::MigrationPlan plan = VCLG::PlanMigration(from.layout, to.layout);
+        plan.Apply(from.state.data, to.state.data);
+        return plan;
+    }
 
     // A node translated on its own (not through the graph codegen), and its module.
     struct Translation {

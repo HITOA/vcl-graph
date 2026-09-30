@@ -20,6 +20,10 @@ namespace VCLG {
      * - an output kept by the host (it must persist, or it's observed): `<node path>.<output>`;
      * - a feedback value: `<Feedback Input path>#feedback`.
      *
+     * The key says which node a region belongs to; its **signature** says whether the region's
+     * bytes still mean the same thing (§6.3). A recompiled graph takes over the regions of the
+     * previous one whose key and signature are unchanged (`PlanMigration`).
+     *
      * Regions are placed in execution order, each aligned to at least the vector width. The UI
      * block is empty until inputs can be live (plan P9/P10); `Main` and `Reset` already take it.
      */
@@ -34,6 +38,12 @@ namespace VCLG {
             uint64_t alignment = 1;
             /** The external symbol the root frame's code reaches the region through. */
             std::string symbol{};
+            /**
+             * Hash of what gives the bytes their meaning: the generations of the graphs the node
+             * belongs to (§6.1), the node's source (state and outputs), and the layout of what the
+             * region holds. Equal keys and signatures: the old bytes are valid in the new graph.
+             */
+            uint64_t signature = 0;
         };
 
         struct Block {

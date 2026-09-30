@@ -212,6 +212,7 @@ void VCLG::GraphInstance::Reset() {
     for (Node* node : nodes)
         DestroyNode(node);
     identityProvider.Reset();
+    ++generation;
 }
 
 void VCLG::GraphInstance::DestroyNodeConnections(Node* node) {

@@ -6,6 +6,7 @@
 
 #include <llvm/Support/MathExtras.h>
 #include <llvm/Support/Path.h>
+#include <llvm/Support/xxhash.h>
 
 #include <algorithm>
 #include <map>
@@ -75,27 +76,63 @@ namespace {
             return (uint32_t)plan.slots.size() - 1;
         }
 
-        uint32_t AddRegion(const std::string& key, GraphLayout::RegionKind kind, const std::string& symbol, uint64_t size, uint64_t alignment) {
+        uint32_t AddRegion(const std::string& key, GraphLayout::RegionKind kind, const std::string& symbol, uint64_t size, uint64_t alignment,
+                uint64_t signature) {
             GraphLayout::Region region{};
             region.key = key;
             region.kind = kind;
             region.size = size;
             region.alignment = std::max(alignment, minimumAlignment);
             region.symbol = symbol;
+            region.signature = signature;
             plan.layout.regions.push_back(std::move(region));
             return (uint32_t)plan.layout.regions.size() - 1;
         }
 
         uint32_t AddHostSlot(SlotPlan::SlotClass slotClass, VCL::Type* type, const std::string& name, GraphLayout::RegionKind kind,
-                const std::string& key, const std::string& symbol, uint64_t size, uint64_t alignment) {
+                const std::string& key, const std::string& symbol, uint64_t size, uint64_t alignment, uint64_t signature) {
             SlotPlan::Slot slot{};
             slot.slotClass = slotClass;
             slot.type = type;
             slot.size = size;
             slot.alignment = std::max(alignment, minimumAlignment);
             slot.name = name;
-            slot.region = AddRegion(key, kind, symbol, size, alignment);
+            slot.region = AddRegion(key, kind, symbol, size, alignment, signature);
             return AddSlot(std::move(slot));
+        }
+
+        // Every graph the nodes of `scope` are copied from, with its generation, up to the root:
+        // a path only names the same node within these generations (§6.1).
+        std::string Lineage(ElaboratedGraph::ScopeIndex scope) const {
+            std::string text{};
+            for (; scope != ElaboratedGraph::Invalid; scope = graph.GetScopes()[scope].parent) {
+                const ElaboratedGraph::Scope& s = graph.GetScopes()[scope];
+                text += "g" + std::to_string(s.graph) + "@" + std::to_string(s.generation) + ";";
+            }
+            return text;
+        }
+
+        // The signature of a region (§6.3): a hash of what gives its bytes their meaning.
+        static uint64_t Signature(const std::string& text) {
+            return llvm::xxh3_64bits(text);
+        }
+
+        uint64_t StateSignature(const ElaboratedGraph::Node& node, const VCLG::NodeInterface& interface) const {
+            std::string text = "state " + Lineage(node.scope) + " source " + std::to_string(interface.sourceHash)
+                + " size " + std::to_string(interface.stateSize) + " align " + std::to_string(interface.stateAlignment);
+            for (const VCLG::NodeInterface::StateField& field : interface.stateFields)
+                text += " " + std::to_string(field.offset) + "+" + std::to_string(field.size);
+            return Signature(text);
+        }
+
+        uint64_t PortSignature(const char* kind, const ElaboratedGraph::Node& node, const VCLG::NodeInterface* interface, VCL::Type* type,
+                uint64_t size, uint64_t alignment) const {
+            std::string text = std::string{ kind } + " " + Lineage(node.scope);
+            if (interface != nullptr)
+                text += " source " + std::to_string(interface->sourceHash);
+            text += " type " + (type ? VCL::TypePrinter::Print(type) : std::string{ "?" })
+                + " size " + std::to_string(size) + " align " + std::to_string(alignment);
+            return Signature(text);
         }
 
         std::optional<uint32_t> AddTemporary(VCL::Type* type, const std::string& name, uint32_t position, bool isOutput) {
@@ -154,7 +191,8 @@ namespace {
 
             // S1: always, for state (§5.3).
             slots.state = AddHostSlot(SlotPlan::SlotClass::HostState, nullptr, node.path, GraphLayout::RegionKind::State,
-                GraphLayout::StateKey(node.path), node.path + "#state", interface->stateSize, interface->stateAlignment);
+                GraphLayout::StateKey(node.path), node.path + "#state", interface->stateSize, interface->stateAlignment,
+                StateSignature(node, *interface));
 
             for (uint32_t i = 0; i < node.inputs.size(); ++i) {
                 const ElaboratedGraph::Input& input = node.inputs[i];
@@ -194,8 +232,10 @@ namespace {
                     slots.outputs.push_back(*slot);
                 } else {
                     // S3: it must persist, or the host reads it.
+                    const VCLG::NodeInterface::Port& layout = interface->ports[port];
                     slots.outputs.push_back(AddHostSlot(SlotPlan::SlotClass::HostPort, type, key, GraphLayout::RegionKind::Output,
-                        key, key + "#output", interface->ports[port].size, interface->ports[port].alignment));
+                        key, key + "#output", layout.size, layout.alignment,
+                        PortSignature("output", node, interface, type, layout.size, layout.alignment)));
                 }
             }
             return std::nullopt;
@@ -242,7 +282,7 @@ namespace {
                 return std::nullopt;
             std::string key = GraphLayout::FeedbackKey(node.path);
             uint32_t slot = AddHostSlot(SlotPlan::SlotClass::Feedback, type, key, GraphLayout::RegionKind::Feedback, key, key,
-                layout->first, layout->second);
+                layout->first, layout->second, PortSignature("feedback", node, nullptr, type, layout->first, layout->second));
             feedbackSlots[feedbackInput] = slot;
             return slot;
         }

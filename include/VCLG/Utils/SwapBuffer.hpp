@@ -53,6 +53,7 @@ namespace VCLG {
         }
 
         inline T* operator->() { return ptr; }
+        inline T* Get() { return ptr; }
         inline operator bool() { return ptr != nullptr; }
 
     private:

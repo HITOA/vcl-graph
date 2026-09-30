@@ -83,7 +83,15 @@ namespace VCLG {
          */
         bool BuildExecutionOrder(llvm::ArrayRef<Node*> roots, std::vector<Node*>& order) const;
 
+        /**
+         * Clears the graph: nodes, connections, and the identity counter, which restarts at 1. The
+         * graph's generation is incremented, so that a node created afterwards is never taken for
+         * the one that had its identity before (`state-as-data.md` §6.1).
+         */
         void Reset();
+
+        /** Incremented by every `Reset()`: identities are unique within a generation only. */
+        inline uint64_t GetGeneration() const { return generation; }
 
         inline const std::string& GetName() const { return name; }
         inline void SetName(const std::string& name) { this->name = name; }
@@ -109,6 +117,7 @@ namespace VCLG {
         std::vector<Connection> connections;
 
         std::string name;
+        uint64_t generation = 0;
     };
 
 }

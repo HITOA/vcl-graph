@@ -11,6 +11,7 @@ add_executable(vclg_test
     Graph/Inference.cpp
     Graph/Inputs.cpp
     Graph/Lifetime.cpp
+    Graph/Migration.cpp
     Graph/Mangling.cpp
     Graph/Order.cpp
     Graph/Planned.cpp
