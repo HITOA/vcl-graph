@@ -31,11 +31,13 @@ namespace VCLG {
         virtual VCL::Type* GetInputType(VCL::Type* outType, VCL::Type* inType) = 0;
 
         /**
-         * Emits the conversion into `builder`: reads `outGV` (of `outType`), writes `inGV` (of
-         * `inType`, the type `GetInputType` returned).
+         * Emits the conversion into `builder`: reads the value of `outType` at `outPtr`, writes the
+         * value of `inType` (the type `GetInputType` returned) at `inPtr`. The LLVM types of both are
+         * `GetGraphContext().ConvertType(...)`. `inPtr` is the converter's own storage, never read
+         * by anything else before the conversion.
          */
         virtual bool Emit(llvm::IRBuilder<>& builder, VCL::Type* outType, VCL::Type* inType,
-            llvm::GlobalVariable* outGV, llvm::GlobalVariable* inGV) = 0;
+            llvm::Value* outPtr, llvm::Value* inPtr) = 0;
 
     private:
         GraphContext* context;

@@ -32,6 +32,8 @@ namespace VCLG {
         VCL::FunctionDecl* process = nullptr;
         VCL::FunctionDecl* reset = nullptr;
         VCL::FunctionDecl* init = nullptr;
+        /** Per input: the constant holding its declared initializer, or null when it has none. */
+        llvm::SmallVector<VCL::VarDecl*, 8> inputDefaults{};
         std::set<std::string> hostSymbols{};
     };
 

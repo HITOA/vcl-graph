@@ -1,7 +1,10 @@
 #include "Common/GraphTest.hpp"
 
+#include <catch2/generators/catch_generators.hpp>
+
 
 TEST_CASE_METHOD(Test::GraphTest, "Recompiling with a cached library", "[Graph][Lifetime][Regression]") {
+    mode = GENERATE(Test::Legacy, Test::Planned);
     // Like Grog: every compile creates new node ASTs while the imported library stays cached.
     // StructUser instantiates a library template with its own struct; that instantiation must not
     // stay attached to the library after the node's AST is gone (vcl-review.md T3).
@@ -10,13 +13,15 @@ TEST_CASE_METHOD(Test::GraphTest, "Recompiling with a cached library", "[Graph][
         auto* node = AddNode(*graph, "StructUser");
         node->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
         Test::CompiledGraph compiled = Compile(*graph);
+        compiled.Reset();
         compiled.Main();
-        REQUIRE(*compiled.Global<float>(NodeSymbol(*graph, node, "output")) == 3.5f);
+        REQUIRE(*compiled.Output<float>(NodePath(*graph, node), "output") == 3.5f);
     }
     REQUIRE(consumer.errors.empty());
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Many graphs in one context", "[Graph][Lifetime]") {
+    mode = GENERATE(Test::Legacy, Test::Planned);
     // Builds, compiles and destroys graphs repeatedly; with VCLG_SANITIZE this catches leaks and
     // use-after-free in definitions, ports and type caches.
     for (int i = 0; i < 20; ++i) {
@@ -29,7 +34,7 @@ TEST_CASE_METHOD(Test::GraphTest, "Many graphs in one context", "[Graph][Lifetim
         REQUIRE(Connect(*graph, scale->GetOutputs()[0], pass->GetInputs()[0]) != INVALID_IDENTITY);
         Test::CompiledGraph compiled = Compile(*graph);
         compiled.Main();
-        REQUIRE(*compiled.Global<float>(NodeSymbol(*graph, pass, "output")) == 2.0f);
+        REQUIRE(*compiled.Output<float>(NodePath(*graph, pass), "output") == 2.0f);
         graph->DestroyNode(scale);
     }
 }

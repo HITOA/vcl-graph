@@ -1,5 +1,7 @@
 #include "Common/GraphTest.hpp"
 
+#include <catch2/generators/catch_generators.hpp>
+
 #include <VCLG/Graph/Converter.hpp>
 
 #include <VCL/AST/ConstantValue.hpp>
@@ -22,8 +24,8 @@ namespace {
         }
 
         bool Emit(llvm::IRBuilder<>& builder, VCL::Type* outType, VCL::Type* inType,
-                llvm::GlobalVariable* outGV, llvm::GlobalVariable* inGV) override {
-            builder.CreateStore(builder.CreateLoad(inGV->getValueType(), outGV), inGV);
+                llvm::Value* outPtr, llvm::Value* inPtr) override {
+            builder.CreateStore(builder.CreateLoad(GetGraphContext().ConvertType(inType), outPtr), inPtr);
             return true;
         }
 
@@ -55,6 +57,7 @@ namespace {
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Each use of a subgraph gets its own types", "[Graph][Elaboration]") {
+    mode = GENERATE(Test::Legacy, Test::Planned);
     AdoptingConverter converter{};
     context.AddConverter(&converter);
 
@@ -108,8 +111,8 @@ TEST_CASE_METHOD(Test::GraphTest, "Each use of a subgraph gets its own types", "
 
     Test::CompiledGraph compiled = Compile(*root);
     compiled.Main();
-    REQUIRE(*compiled.Global<float>(NodeSymbol(*root, floatSink, "output")) == 5.0f);
-    REQUIRE(*compiled.Global<int32_t>(NodeSymbol(*root, intSink, "output")) == 3);
+    REQUIRE(*compiled.Output<float>(NodePath(*root, floatSink), "output") == 5.0f);
+    REQUIRE(*compiled.Output<int32_t>(NodePath(*root, intSink), "output") == 3);
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "A type error inside one use of a subgraph names that use", "[Graph][Elaboration][Diagnostics]") {

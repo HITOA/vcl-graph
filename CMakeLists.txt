@@ -11,6 +11,7 @@ endif()
 
 option(VCLG_BUILD_TEST "Build vcl-graph tests." OFF)
 option(VCLG_SANITIZE "Build vcl-graph, vcl and the tests with AddressSanitizer and UndefinedBehaviorSanitizer." OFF)
+option(VCLG_CHECK_ALWAYS_WRITTEN "Check at run time that always-written outputs are written (a canary in each temporary output)." OFF)
 
 if (VCLG_SANITIZE)
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
@@ -25,8 +26,10 @@ add_library(vclg STATIC
     src/AST/ASTParameterWriter.cpp
     src/AST/ASTPortTypeOverrideWriter.cpp
     src/CodeGen/CodeGenEntrypoint.cpp
+    src/CodeGen/CodeGenFrame.cpp
     src/CodeGen/CodeGenGraph.cpp
     src/CodeGen/Optimizer.cpp
+    src/CodeGen/SlotPlanner.cpp
     src/Core/Diagnostics.cpp
     src/Core/SubstitutionTable.cpp
     src/Graph/BuiltinNodes.cpp
@@ -50,6 +53,9 @@ if(CMAKE_BUILD_TYPE EQUAL "Release")
 endif()
 
 target_link_libraries(vclg PUBLIC vcl)
+if (VCLG_CHECK_ALWAYS_WRITTEN)
+    target_compile_definitions(vclg PUBLIC VCLG_CHECK_ALWAYS_WRITTEN)
+endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/example)
 

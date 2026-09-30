@@ -34,6 +34,11 @@ namespace VCLG {
              * output before reading it (`initializes`, P3.5). Only positive proofs are recorded.
              */
             bool provenAlwaysWritten = false;
+            /**
+             * Inputs: the symbol of the constant holding the declared initializer (a variable of
+             * the port's type), or empty when the input has none (it's then zero).
+             */
+            std::string defaultValue{};
         };
 
         struct StateField {

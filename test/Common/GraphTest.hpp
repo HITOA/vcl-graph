@@ -7,6 +7,8 @@
 #include <VCLG/Graph/BuiltinNodes.hpp>
 #include <VCLG/Graph/Elaboration.hpp>
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
+#include <VCLG/CodeGen/Optimizer.hpp>
+#include <VCLG/CodeGen/SlotPlanner.hpp>
 #include <VCLG/Core/Diagnostics.hpp>
 #include <VCLG/Translation/Translation.hpp>
 
@@ -17,7 +19,12 @@
 #include <VCL/Frontend/Directives.hpp>
 
 #include <llvm/IR/Verifier.h>
+#include <llvm/Support/MathExtras.h>
 
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -64,16 +71,99 @@ namespace Test {
         std::vector<std::string> warnings{};
     };
 
-    // A compiled graph, ready to run. Globals are looked up by their mangled name, which is the
-    // node's path in the graph plus the variable name (see NodeSymbol).
+    using Mode = VCLG::CodeGenGraphOptions::Mode;
+    constexpr Mode Legacy = Mode::Legacy;
+    constexpr Mode Planned = Mode::Planned;
+
+    // A zeroed, aligned host allocation (a state or UI block).
+    struct HostBlock {
+        void* data = nullptr;
+
+        HostBlock() = default;
+        HostBlock(uint64_t size, uint64_t alignment) {
+            alignment = std::max<uint64_t>(alignment, 64);
+            size = llvm::alignTo(std::max<uint64_t>(size, 64), alignment);
+            data = std::aligned_alloc(alignment, size);
+            std::memset(data, 0, size);
+        }
+        HostBlock(const HostBlock&) = delete;
+        HostBlock(HostBlock&& other) noexcept : data{ other.data } { other.data = nullptr; }
+        HostBlock& operator=(HostBlock&& other) noexcept { std::swap(data, other.data); return *this; }
+        ~HostBlock() { std::free(data); }
+
+        inline uint8_t* Bytes() const { return (uint8_t*)data; }
+    };
+
+    // A compiled graph, ready to run, read the same way in both codegen modes:
+    // - Legacy: every variable is a global, named by the node's path plus the variable name (see
+    //   NodeSymbol);
+    // - Planned: state and host ports are regions of the state block, found through the layout by
+    //   path and name (state fields through the node's interface).
     struct CompiledGraph {
+        Mode mode = Planned;
         std::unique_ptr<VCL::ExecutionSession> session{};
+        VCLG::GraphLayout layout{};
+        HostBlock state{};
+        HostBlock ui{};
+        // Planned: node path -> state field name -> offset in the node's `State`.
+        std::map<std::string, std::map<std::string, uint64_t>> stateFields{};
+        // Legacy: every global the module defines.
+        std::vector<std::string> globals{};
 
-        inline void Main() { ((void(*)())session->Lookup("Main"))(); }
-        inline void Reset() { ((void(*)())session->Lookup("Reset"))(); }
+        inline void Main() {
+            if (mode == Legacy)
+                ((void(*)())session->Lookup("Main"))();
+            else
+                ((void(*)(const void*))session->Lookup("Main"))(ui.data);
+        }
+        inline void Reset() {
+            if (mode == Legacy)
+                ((void(*)())session->Lookup("Reset"))();
+            else
+                ((void(*)(const void*))session->Lookup("Reset"))(ui.data);
+        }
 
+        // A symbol of the module, or one the host binds (AudioOutput...).
         template<typename T>
         inline T* Global(const std::string& name) { return (T*)session->Lookup(name); }
+
+        // Output `name` (the port's variable name) of the node at `path`: a host port in planned
+        // mode (the fixture observes every output unless told otherwise).
+        template<typename T>
+        inline T* Output(const std::string& path, const std::string& name) {
+            if (mode == Legacy)
+                return Global<T>(path + "." + name);
+            const VCLG::GraphLayout::Region* region = layout.FindRegion(VCLG::GraphLayout::OutputKey(path, name));
+            REQUIRE(region != nullptr);
+            return (T*)(state.Bytes() + region->offset);
+        }
+
+        // State variable `field` of the node at `path`.
+        template<typename T>
+        inline T* State(const std::string& path, const std::string& field) {
+            if (mode == Legacy)
+                return Global<T>(path + "." + field);
+            const VCLG::GraphLayout::Region* region = layout.FindRegion(VCLG::GraphLayout::StateKey(path));
+            REQUIRE(region != nullptr);
+            REQUIRE(stateFields[path].contains(field));
+            return (T*)(state.Bytes() + region->offset + stateFields[path][field]);
+        }
+
+        // The value of every node's state variable `field`, in the order of the nodes' paths.
+        template<typename T>
+        std::vector<T> StateValues(const std::string& field) {
+            std::vector<T> values{};
+            if (mode == Legacy) {
+                for (const std::string& name : globals)
+                    if (llvm::StringRef{ name }.ends_with("." + field))
+                        values.push_back(*Global<T>(name));
+                return values;
+            }
+            for (auto& [path, fields] : stateFields)
+                if (fields.contains(field))
+                    values.push_back(*State<T>(path, field));
+            return values;
+        }
     };
 
     // A node translated on its own (not through the graph codegen), and its module.
@@ -112,9 +202,23 @@ namespace Test {
             return graph.Connect(from, to);
         }
 
-        // Mangled name of a variable of a node compiled in the root graph `graph`.
+        // Graph path of a node of the root graph `graph` (the prefix of its symbols, its key).
+        static inline std::string NodePath(VCLG::GraphInstance& graph, VCLG::Node* node) {
+            return "g" + std::to_string(graph.GetIdentity()) + "/n" + std::to_string(node->GetIdentity());
+        }
+
+        // Mangled name of a variable of a node compiled in the root graph `graph` (legacy mode).
         static inline std::string NodeSymbol(VCLG::GraphInstance& graph, VCLG::Node* node, const std::string& variable) {
-            return "g" + std::to_string(graph.GetIdentity()) + "/n" + std::to_string(node->GetIdentity()) + "." + variable;
+            return NodePath(graph, node) + "." + variable;
+        }
+
+        // What the fixture compiles with: the test's mode, and every output observed by the host,
+        // so that tests can read them.
+        inline VCLG::CodeGenGraphOptions Options() const {
+            VCLG::CodeGenGraphOptions options{};
+            options.mode = mode;
+            options.planner.observeAllOutputs = true;
+            return options;
         }
 
         // Emits `graph` into a fresh module and passes it to `inspect` (no optimization, nothing
@@ -123,7 +227,7 @@ namespace Test {
         bool Emit(VCLG::GraphInstance& graph, F&& inspect) {
             llvm::orc::ThreadSafeModule module = MakeModule();
             return module.withModuleDo([&](llvm::Module& m) {
-                VCLG::CodeGenGraph cgg{ context, graph, m };
+                VCLG::CodeGenGraph cgg{ context, graph, m, Options() };
                 if (!cgg.Emit() || !cgg.LinkNow() || llvm::verifyModule(m, &llvm::errs()))
                     return false;
                 inspect(m);
@@ -131,27 +235,75 @@ namespace Test {
             });
         }
 
-        // Emits, links and JIT-compiles `graph`. Every defined symbol is made external so that
-        // tests can read node state by name.
-        CompiledGraph Compile(VCLG::GraphInstance& graph) {
+        // The slot plan of `graph` (planned mode), printed; empty if it can't be compiled.
+        std::string Plan(VCLG::GraphInstance& graph, VCLG::CodeGenGraphOptions options = {}) {
+            options.mode = Planned;
+            std::string plan{};
+            llvm::orc::ThreadSafeModule module = MakeModule();
+            module.withModuleDo([&](llvm::Module& m) {
+                VCLG::CodeGenGraph cgg{ context, graph, m, options };
+                if (cgg.Emit() && cgg.GetPlan() != nullptr)
+                    plan = VCLG::PrintPlan(cgg.GetElaboratedGraph(), *cgg.GetPlan());
+            });
+            return plan;
+        }
+
+        // Emits, links and JIT-compiles `graph` with `options` (by default, Options()); with
+        // `optimize`, through VCLG::Optimizer as Grog does. In legacy mode, every defined symbol
+        // is made external so that tests can read node state by name. In planned mode, the state
+        // and UI blocks are allocated and every region bound, as Grog's ExecutionContext does.
+        CompiledGraph Compile(VCLG::GraphInstance& graph, std::optional<VCLG::CodeGenGraphOptions> options = std::nullopt,
+                bool optimize = false) {
+            if (!options)
+                options = Options();
             CompiledGraph compiled{};
+            compiled.mode = options->mode;
             llvm::orc::ThreadSafeModule module = MakeModule();
             bool emitted = module.withModuleDo([&](llvm::Module& m) {
-                VCLG::CodeGenGraph cgg{ context, graph, m };
-                if (!cgg.Emit() || !cgg.LinkNow() || llvm::verifyModule(m, &llvm::errs()))
+                VCLG::CodeGenGraph cgg{ context, graph, m, *options };
+                if (!cgg.Emit())
                     return false;
-                for (llvm::GlobalVariable& global : m.globals())
-                    if (!global.isDeclaration())
-                        global.setLinkage(llvm::GlobalValue::ExternalLinkage);
-                for (llvm::Function& function : m)
-                    if (!function.isDeclaration())
-                        function.setLinkage(llvm::GlobalValue::ExternalLinkage);
-                return true;
+                if (compiled.mode == Legacy) {
+                    for (llvm::GlobalVariable& global : m.globals())
+                        if (!global.isDeclaration()) {
+                            global.setLinkage(llvm::GlobalValue::ExternalLinkage);
+                            global.setDSOLocal(false);
+                            compiled.globals.push_back(global.getName().str());
+                        }
+                    for (llvm::Function& function : m)
+                        if (!function.isDeclaration())
+                            function.setLinkage(llvm::GlobalValue::ExternalLinkage);
+                } else {
+                    compiled.layout = cgg.GetLayout();
+                    for (const VCLG::ElaboratedGraph::Node& node : cgg.GetElaboratedGraph().GetNodes()) {
+                        const VCLG::NodeInterface* interface = cgg.GetNodeInterface(node.path);
+                        if (interface == nullptr)
+                            continue;
+                        llvm::ArrayRef<VCLG::SourceStateDefinition> variables = interface->definition->GetStateVariables();
+                        for (uint32_t i = 0; i < variables.size() && i < interface->stateFields.size(); ++i)
+                            compiled.stateFields[node.path][variables[i].GetName()] = interface->stateFields[i].offset;
+                    }
+                }
+                if (optimize) {
+                    VCLG::Optimizer optimizer{};
+                    return optimizer.Optimize(cgg) && !llvm::verifyModule(m, &llvm::errs());
+                }
+                return cgg.LinkNow() && !llvm::verifyModule(m, &llvm::errs());
             });
+            std::string errors{};
+            for (const std::string& error : consumer.errors)
+                errors += error + "\n";
+            INFO(errors);
             REQUIRE(emitted);
             compiled.session = std::make_unique<VCL::ExecutionSession>();
             compiled.session->DefineDefaultMemIntrinsic();
             compiled.session->DefineDefaultMathIntrinsic();
+            if (compiled.mode == Planned) {
+                compiled.state = HostBlock{ compiled.layout.state.size, compiled.layout.state.alignment };
+                compiled.ui = HostBlock{ compiled.layout.ui.size, compiled.layout.ui.alignment };
+                for (const VCLG::GraphLayout::Region& region : compiled.layout.regions)
+                    REQUIRE(compiled.session->DefineSymbolPtr(region.symbol, compiled.state.Bytes() + region.offset));
+            }
             REQUIRE(compiled.session->SubmitModule(std::move(module)));
             return compiled;
         }
@@ -214,6 +366,8 @@ namespace Test {
         }
 
     public:
+        // The codegen tests compile with (tests covering both set it with GENERATE).
+        Mode mode = Planned;
         RecordingDiagnosticConsumer consumer{};
         std::shared_ptr<VCL::CompilerInvocation> invocation;
         VCLG::GraphContext context;

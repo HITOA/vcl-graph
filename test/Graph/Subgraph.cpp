@@ -2,6 +2,8 @@
 
 #include <VCL/AST/ConstantValue.hpp>
 
+#include <catch2/generators/catch_generators.hpp>
+
 
 // A subgraph containing one Counter, exposed through a Subgraph Output.
 static std::shared_ptr<VCLG::GraphInstance> MakeCounterSubgraph(Test::GraphTest& test) {
@@ -23,24 +25,16 @@ static void UseTwice(Test::GraphTest& test, VCLG::GraphInstance& root, std::shar
     }
 }
 
-// Every global whose name ends with ".state", after running Main three times.
+// Every node's state variable `state` (the counters'), after running Main three times.
 static std::vector<float> CounterStates(Test::GraphTest& test, VCLG::GraphInstance& root) {
-    std::vector<std::string> names{};
-    REQUIRE(test.Emit(root, [&](llvm::Module& m) {
-        for (llvm::GlobalVariable& global : m.globals())
-            if (global.getName().ends_with(".state"))
-                names.push_back(global.getName().str());
-    }));
     Test::CompiledGraph compiled = test.Compile(root);
     for (int i = 0; i < 3; ++i)
         compiled.Main();
-    std::vector<float> values{};
-    for (const std::string& name : names)
-        values.push_back(*compiled.Global<float>(name));
-    return values;
+    return compiled.StateValues<float>("state");
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Each use of a subgraph has its own state", "[Graph][Subgraph]") {
+    mode = GENERATE(Test::Legacy, Test::Planned);
     // The same subgraph used twice is compiled twice, under two different graph paths.
     auto sub = MakeCounterSubgraph(*this);
     auto root = context.CreateInstance();
@@ -53,6 +47,7 @@ TEST_CASE_METHOD(Test::GraphTest, "Each use of a subgraph has its own state", "[
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Nested uses of a subgraph have their own state", "[Graph][Subgraph]") {
+    mode = GENERATE(Test::Legacy, Test::Planned);
     // `middle` uses the counter subgraph twice (summed); the root uses `middle` twice: 4 counters.
     auto counter = MakeCounterSubgraph(*this);
     auto middle = context.CreateInstance();
@@ -76,6 +71,7 @@ TEST_CASE_METHOD(Test::GraphTest, "Nested uses of a subgraph have their own stat
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Values flow into and out of a subgraph", "[Graph][Subgraph]") {
+    mode = GENERATE(Test::Legacy, Test::Planned);
     // sub: in -> Add(+1) -> out.  root: 5 -> sub -> sink
     auto sub = context.CreateInstance();
     VCL::Type* float32 = context.GetGlobalASTContext().GetTypeCache().GetOrCreateBuiltinType(VCL::BuiltinType::Float32);
@@ -101,6 +97,7 @@ TEST_CASE_METHOD(Test::GraphTest, "Values flow into and out of a subgraph", "[Gr
     REQUIRE(root->Connect(use->GetOutputs()[0], sink->GetInputs()[0]) != INVALID_IDENTITY);
 
     Test::CompiledGraph compiled = Compile(*root);
+    compiled.Reset();
     compiled.Main();
-    REQUIRE(*compiled.Global<float>(NodeSymbol(*root, sink, "output")) == 6.0f);
+    REQUIRE(*compiled.Output<float>(NodePath(*root, sink), "output") == 6.0f);
 }

@@ -7,6 +7,7 @@
 #include <VCL/Frontend/CompilerContext.hpp>
 
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
+#include <llvm/IR/Type.h>
 
 #include <memory>
 
@@ -20,7 +21,7 @@ namespace VCLG {
         GraphContext(std::shared_ptr<VCL::CompilerInvocation> invocation);
         GraphContext(const GraphContext& other) = delete;
         GraphContext(GraphContext&& other) = delete;
-        ~GraphContext() = default;
+        ~GraphContext();
 
         GraphContext& operator=(const GraphContext& other) = delete;
         GraphContext& operator=(GraphContext&& other) = delete;
@@ -31,6 +32,13 @@ namespace VCLG {
         inline std::vector<Converter*>& GetConverters() { return converters; }
 
         void AddConverter(Converter* converter);
+
+        /**
+         * The LLVM type VCL emits for `type`, in this context's LLVM context and for its target
+         * (converters use it to know what they read and write). Null, with an error reported, if
+         * the type can't be emitted.
+         */
+        llvm::Type* ConvertType(VCL::Type* type);
 
         std::shared_ptr<GraphInstance> CreateInstance();
 
@@ -43,6 +51,11 @@ namespace VCLG {
         std::vector<Converter*> converters;
 
         IdentityProvider identityProvider;
+
+        // A code generator on a module of its own, only used for its type conversion; created on
+        // first use. Last: it refers to the compiler context and the global AST context.
+        struct TypeConverter;
+        std::unique_ptr<TypeConverter> typeConverter;
     };
 
 }

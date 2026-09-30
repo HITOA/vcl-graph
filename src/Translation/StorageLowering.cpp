@@ -24,7 +24,9 @@ namespace {
     //   const reference, as VCL passes them), outputs `out T`; a reference to a port becomes a
     //   reference to its parameter;
     // - calls between node functions pass `self` (and, between entry points, the ports);
-    // - constants stay module-level; `__Init` sets every state field and output to its initial value.
+    // - constants stay module-level; `__Init` sets every state field and output to its initial value;
+    // - an input's initializer becomes a constant `__Default_<input>`, for the graph to point the
+    //   input at while it's unconnected.
     // Entry points are exported (external, mangled with the node's prefix) and their reference
     // parameters get the flags of the entry-point ABI (§4.6).
     class StorageLowering : public VCL::TreeTransform {
@@ -36,6 +38,7 @@ namespace {
             VCL::TranslationUnitDecl* source = context.translationUnit;
             VCL::TranslationUnitDecl* result = VCL::TranslationUnitDecl::Create(context.ast);
             auto guard = sema.EnterTranslationUnit(result);
+            context.inputDefaults.assign(model.GetInputCount(), nullptr);
 
             for (VCL::FunctionDecl* function : model.GetFunctions())
                 nodeFunctions.insert(function);
@@ -52,7 +55,12 @@ namespace {
                     case VCL::Decl::VarDeclClass: {
                         // Constants (and a node's own host variables) stay module-level.
                         std::optional<NodeModel::VarKind> kind = model.GetVarKind(decl);
-                        if (kind == NodeModel::VarKind::State || kind == NodeModel::VarKind::Input || kind == NodeModel::VarKind::Output)
+                        if (kind == NodeModel::VarKind::Input) {
+                            if (!DeclareInputDefault((VCL::VarDecl*)decl))
+                                return false;
+                            break;
+                        }
+                        if (kind == NodeModel::VarKind::State || kind == NodeModel::VarKind::Output)
                             break;
                         if (!TransformDecl(decl))
                             return false;
@@ -187,6 +195,28 @@ namespace {
                 input->SetCodeGenFlag((F::CodeGenFlags)(common | F::ReadOnly));
             for (VCL::ParamDecl* output : outputs)
                 output->SetCodeGenFlag((F::CodeGenFlags)common);
+        }
+
+        // `const T __Default_<input> = <its initializer>`: what the input holds while unconnected
+        // (the graph points the parameter at it), unless the graph gives it a value of its own.
+        bool DeclareInputDefault(VCL::VarDecl* input) {
+            if (input->GetInitializer() == nullptr)
+                return true;
+            VCL::QualType type = TransformType(input->GetValueType());
+            VCL::Expr* initializer = TransformExpr(input->GetInitializer());
+            if (!type.GetAsOpaquePtr() || initializer == nullptr)
+                return false;
+            VCL::IdentifierInfo* name = context.identifiers.Get("__Default_" + input->GetIdentifierInfo()->GetName().str());
+            VCL::VarDecl* constant = sema.ActOnVarDecl(type, name, VCL::Decl::VarAttrBitfield{ 0 }, initializer, input->GetSourceRange());
+            if (constant == nullptr)
+                return false;
+            // Part of what the graph uses, like the entry points (the graph makes it internal again).
+            constant->SetExported(true);
+            std::optional<uint32_t> index = model.GetPortIndex(input);
+            if (!index)
+                return InternalError(input->GetSourceRange()), false;
+            context.inputDefaults[*index] = constant;
+            return true;
         }
 
         VCL::ParamDecl* DeclareSelf(VCL::SourceRange range) {

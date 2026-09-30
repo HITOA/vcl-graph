@@ -1,5 +1,7 @@
 #include "Common/GraphTest.hpp"
 
+#include <catch2/generators/catch_generators.hpp>
+
 
 TEST_CASE_METHOD(Test::GraphTest, "A templated node takes the type connected to it", "[Graph][Inference]") {
     auto graph = context.CreateInstance();
@@ -34,6 +36,7 @@ TEST_CASE_METHOD(Test::GraphTest, "A templated node takes the type connected to 
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "A templated node compiles for the inferred type", "[Graph][Inference]") {
+    mode = GENERATE(Test::Legacy, Test::Planned);
     auto graph = context.CreateInstance();
     auto* source = AddNode(*graph, "ArraySource");
     auto* pass = AddNode(*graph, "Passthrough");
@@ -42,7 +45,7 @@ TEST_CASE_METHOD(Test::GraphTest, "A templated node compiles for the inferred ty
 
     Test::CompiledGraph compiled = Compile(*graph);
     compiled.Main();
-    float* values = compiled.Global<float>(NodeSymbol(*graph, pass, "output"));
+    float* values = compiled.Output<float>(NodePath(*graph, pass), "output");
     REQUIRE(values != nullptr);
     for (int i = 0; i < 4; ++i)
         REQUIRE(values[i] == (float)i);

@@ -6,6 +6,9 @@
 #include <VCLG/Translation/SourceNodeCompilation.hpp>
 #include <VCLG/Core/Diagnostics.hpp>
 
+#include "CodeGenFrame.hpp"
+#include "ElaboratedDiagnosticScope.hpp"
+
 #include <VCL/Core/SourceManager.hpp>
 #include <VCL/Frontend/CompilerInstance.hpp>
 #include <VCL/Core/Source.hpp>
@@ -28,55 +31,8 @@
 #include <iostream>
 
 
-namespace {
-
-    // Opens the diagnostic scopes of the subgraph uses enclosing `scope` (outermost first), then
-    // the scope of `node` itself, so that what's reported meanwhile is attributed to that node.
-    class ElaboratedDiagnosticScope {
-    public:
-        ElaboratedDiagnosticScope(const VCLG::ElaboratedGraph& graph, VCLG::ElaboratedGraph::ScopeIndex scope,
-                VCLG::ElaboratedGraph::NodeIndex node) {
-            llvm::SmallVector<VCLG::ElaboratedGraph::ScopeIndex, 4> chain{};
-            for (VCLG::ElaboratedGraph::ScopeIndex s = scope; s != 0 && s != VCLG::ElaboratedGraph::Invalid;
-                    s = graph.GetScopes()[s].parent)
-                chain.push_back(s);
-            for (auto it = chain.rbegin(); it != chain.rend(); ++it)
-                scopes.push_back(std::make_unique<VCLG::NodeDiagnosticScope>(
-                    graph.GetScopes()[*it].path, graph.GetScopes()[*it].displayName));
-            if (node != VCLG::ElaboratedGraph::Invalid)
-                scopes.push_back(std::make_unique<VCLG::NodeDiagnosticScope>(
-                    graph.GetNode(node).path, graph.GetNode(node).displayName));
-        }
-
-        ~ElaboratedDiagnosticScope() {
-            // Innermost first: each scope restores its parent.
-            while (!scopes.empty())
-                scopes.pop_back();
-        }
-
-    private:
-        std::vector<std::unique_ptr<VCLG::NodeDiagnosticScope>> scopes{};
-    };
-
-    // The initial value of a global of `type` given as a scalar: splat across a vector, or across
-    // each lane.
-    llvm::Constant* MakeInitializer(VCL::CodeGenModule& cgm, VCL::ConstantScalar value, VCL::Type* type, uint32_t width) {
-        llvm::Constant* constant = cgm.GenerateConstantValue(&value);
-        type = VCL::Type::GetCanonicalType(type);
-        if (type->GetTypeClass() == VCL::Type::VectorTypeClass)
-            return llvm::ConstantDataVector::getSplat(width, constant);
-        if (type->GetTypeClass() == VCL::Type::LanesTypeClass) {
-            llvm::SmallVector<llvm::Constant*> elements{};
-            elements.assign(width, constant);
-            return llvm::ConstantArray::get(llvm::ArrayType::get(constant->getType(), width), elements);
-        }
-        return constant;
-    }
-
-}
-
-VCLG::CodeGenGraph::CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module) :
-        graphContext{ graphContext }, graph{ graph }, module{ module },
+VCLG::CodeGenGraph::CodeGenGraph(GraphContext& graphContext, GraphInstance& graph, llvm::Module& module, CodeGenGraphOptions options) :
+        graphContext{ graphContext }, graph{ graph }, module{ module }, options{ std::move(options) },
         cc{ graphContext.GetCompilerContext().GetInvocation() },
         aggregatedImportedModuleTable{}, elaborated{}, nodeCompilerInstances{}, outputGlobals{}, feedbackGlobals{} {
     
@@ -89,6 +45,15 @@ VCLG::CodeGenGraph::CodeGenGraph(GraphContext& graphContext, GraphInstance& grap
     cc.CopyTypeCache(graphContext.GetCompilerContext());
     cc.CopyModuleCache(graphContext.GetCompilerContext());
     cc.CreateLLVMContext();
+}
+
+VCLG::CodeGenGraph::~CodeGenGraph() = default;
+
+const VCLG::NodeInterface* VCLG::CodeGenGraph::GetNodeInterface(llvm::StringRef path) const {
+    for (NodeIndex index = 0; index < translatedNodes.size(); ++index)
+        if (translatedNodes[index] && elaborated.GetNode(index).path == path)
+            return &translatedNodes[index]->interface;
+    return nullptr;
 }
 
 bool VCLG::CodeGenGraph::LinkNow() {
@@ -123,9 +88,11 @@ bool VCLG::CodeGenGraph::LinkNow() {
 bool VCLG::CodeGenGraph::Emit() {
     elaborated = Elaborate(graph);
     if (const std::optional<ElaboratedGraph::Error>& error = elaborated.GetError()) {
-        ElaboratedDiagnosticScope diagnosticScope{ elaborated, error->scope, error->node };
+        VCLG::ElaboratedDiagnosticScope diagnosticScope{ elaborated, error->scope, error->node };
         return ReportGraphError(error->message);
     }
+    if (options.mode == CodeGenGraphOptions::Mode::Planned)
+        return EmitPlanned();
 
     entrypoint = std::make_unique<CodeGenEntrypoint>(*this, "Main");
     reset = std::make_unique<CodeGenEntrypoint>(*this, "Reset");
@@ -142,7 +109,7 @@ bool VCLG::CodeGenGraph::Emit() {
         const ElaboratedGraph::Node& node = elaborated.GetNode(index);
         // Everything reported while emitting the node (parse, Sema, codegen, converters) is
         // attributed to it, inside the subgraph uses enclosing it.
-        ElaboratedDiagnosticScope diagnosticScope{ elaborated, node.scope, index };
+        VCLG::ElaboratedDiagnosticScope diagnosticScope{ elaborated, node.scope, index };
         bool emitted = false;
         switch (node.kind) {
             case Node::NodeKind::Source: emitted = EmitSourceNode(index); break;
@@ -160,6 +127,92 @@ bool VCLG::CodeGenGraph::Emit() {
 
     reset->End();
     entrypoint->End();
+    return true;
+}
+
+bool VCLG::CodeGenGraph::EmitPlanned() {
+    // Offsets and sizes are computed with the data layout the JIT compiles for.
+    module.setDataLayout(cc.GetTarget().GetTargetMachine()->createDataLayout());
+
+    // 1. Every source node, translated (§4) into a module of its own, then linked in.
+    if (!TranslateNodes())
+        return false;
+
+    // 2. The slot plan of the root frame (§5.3).
+    VCL::ModuleTable noImports{};
+    VCL::CodeGenModule types{ module, graphContext.GetGlobalASTContext(), cc.GetDiagnosticReporter(), cc.GetTarget(), noImports,
+        cc.GetAttributeTable(), cc.GetIdentifierTable() };
+    const llvm::DataLayout& layout = module.getDataLayout();
+    std::string error{};
+    NodeIndex errorNode = ElaboratedGraph::Invalid;
+    plan = PlanSlots(elaborated, FrameKind::Root,
+        [this](NodeIndex index) -> const NodeInterface* {
+            return index < translatedNodes.size() && translatedNodes[index] ? &translatedNodes[index]->interface : nullptr;
+        },
+        [&](VCL::Type* type) -> std::optional<std::pair<uint64_t, uint64_t>> {
+            llvm::Type* converted = type ? types.GetCGT().ConvertType(VCL::QualType{ type }) : nullptr;
+            if (converted == nullptr)
+                return std::nullopt;
+            return std::make_pair((uint64_t)layout.getTypeAllocSize(converted), (uint64_t)layout.getABITypeAlign(converted).value());
+        },
+        cc.GetTarget().GetVectorWidthInByte(), options.planner, error, errorNode);
+    if (!plan) {
+        std::optional<ElaboratedDiagnosticScope> scope{};
+        if (errorNode != ElaboratedGraph::Invalid)
+            scope.emplace(elaborated, errorNode);
+        return ReportGraphError(error);
+    }
+
+    // 3. The root frame: `Main(ui)` and `Reset(ui)` (§5.4-§5.7).
+    CodeGenFrame frame{ graphContext, cc, module, elaborated, *plan, translatedNodes, options };
+    if (!frame.EmitMain() || !frame.EmitReset())
+        return false;
+
+    // The entry points and input defaults are only used by the frames: internal, like any node
+    // code, so that they disappear once inlined or folded.
+    for (const std::optional<TranslatedNode>& node : translatedNodes) {
+        if (!node)
+            continue;
+        for (const std::string* symbol : { &node->interface.process, &node->interface.reset, &node->interface.init })
+            if (llvm::Function* function = symbol->empty() ? nullptr : module.getFunction(*symbol))
+                function->setLinkage(llvm::GlobalValue::InternalLinkage);
+        // An input default is only used by an unconnected input the graph gives no value of its
+        // own (an aggregate initializer): the others go now, rather than in the optimizer.
+        for (const NodeInterface::Port& port : node->interface.ports) {
+            llvm::GlobalVariable* constant = port.defaultValue.empty() ? nullptr : module.getGlobalVariable(port.defaultValue);
+            if (constant == nullptr)
+                continue;
+            if (constant->use_empty())
+                constant->eraseFromParent();
+            else
+                constant->setLinkage(llvm::GlobalValue::InternalLinkage);
+        }
+    }
+    return true;
+}
+
+bool VCLG::CodeGenGraph::TranslateNodes() {
+    translatedNodes.clear();
+    translatedNodes.resize(elaborated.GetNodes().size());
+    llvm::Linker linker{ module };
+    for (NodeIndex index : elaborated.GetExecutionOrder()) {
+        const ElaboratedGraph::Node& node = elaborated.GetNode(index);
+        if (node.kind != Node::NodeKind::Source)
+            continue;
+        // Everything reported while translating the node is attributed to it.
+        ElaboratedDiagnosticScope diagnosticScope{ elaborated, index };
+        auto nodeModule = std::make_unique<llvm::Module>(node.path, module.getContext());
+        nodeModule->setDataLayout(module.getDataLayout());
+        nodeModule->setTargetTriple(module.getTargetTriple());
+        std::optional<TranslatedNode> translated = TranslateSourceNode(graphContext, cc, node, *nodeModule);
+        if (!translated)
+            return false;
+        for (auto pair : translated->instance->GetImportModuleTable())
+            aggregatedImportedModuleTable.Add(pair.first, pair.second);
+        if (linker.linkInModule(std::move(nodeModule)))
+            return ReportGraphError("failed to link the node's code into the graph");
+        translatedNodes[index] = std::move(translated);
+    }
     return true;
 }
 
@@ -207,7 +260,7 @@ bool VCLG::CodeGenGraph::EmitSourceNode(NodeIndex index) {
 
         if (!input.edge) {
             if (input.initializer)
-                variable->setInitializer(MakeInitializer(cgm, *input.initializer, ElaboratedGraph::TypeOf(input), 
+                variable->setInitializer(VCLG::MakeScalarInitializer(cgm, *input.initializer, ElaboratedGraph::TypeOf(input), 
                     cc.GetTarget().GetVectorWidthInElement()));
             continue;
         }
@@ -398,7 +451,7 @@ llvm::GlobalVariable* VCLG::CodeGenGraph::EmitGlobal(const std::string& path, ll
         return nullptr;
 
     if (initializer)
-        variable->setInitializer(MakeInitializer(cgm, *initializer, type, cc.GetTarget().GetVectorWidthInElement()));
+        variable->setInitializer(VCLG::MakeScalarInitializer(cgm, *initializer, type, cc.GetTarget().GetVectorWidthInElement()));
     return variable;
 }
 

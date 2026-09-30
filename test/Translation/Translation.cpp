@@ -233,6 +233,7 @@ TEST_CASE_METHOD(Test::GraphTest, "The printed translation", "[Translation][Prin
         REQUIRE(node.node.has_value());
         REQUIRE(VCLG::PrintTranslation(*node.node) ==
             "struct State { float32 total; }\n"
+            "export const float32 __Default_input\n"
             "void Accumulate(inout State & self, float32 value, inout float32 & result)\n"
             "export void Process(inout State & self [noalias nocapture align dereferenceable], "
                 "const float32 input [noalias nocapture readonly align dereferenceable], "

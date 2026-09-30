@@ -227,6 +227,9 @@ std::optional<VCLG::TranslatedNode> VCLG::TranslateSourceNode(GraphContext& grap
     // 5. Variant analysis.
     if (!VCLG_CHECK(reporter, ReadLayout(cgm, context, interface)))
         return std::nullopt;
+    for (uint32_t i = 0; i < context.inputDefaults.size(); ++i)
+        if (context.inputDefaults[i] != nullptr)
+            interface.ports[i].defaultValue = ast.GetMangledName(context.inputDefaults[i]);
     if (!ProveAlwaysWritten(module, *instance, context, interface))
         return std::nullopt;
     return translated;
@@ -238,6 +241,7 @@ std::string VCLG::PrintTranslation(const TranslatedNode& node) {
         switch (it->GetDeclClass()) {
             case VCL::Decl::VarDeclClass: {
                 auto* var = (VCL::VarDecl*)it.Get();
+                text += var->IsExported() ? "export " : "";
                 text += VCL::TypePrinter::Print(var->GetValueType()) + " " + var->GetIdentifierInfo()->GetName().str() + "\n";
                 break;
             }

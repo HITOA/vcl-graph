@@ -13,6 +13,7 @@ add_executable(vclg_test
     Graph/Lifetime.cpp
     Graph/Mangling.cpp
     Graph/Order.cpp
+    Graph/Planned.cpp
     Graph/Subgraph.cpp
     Library/Smoke.cpp
     Translation/Rules.cpp
