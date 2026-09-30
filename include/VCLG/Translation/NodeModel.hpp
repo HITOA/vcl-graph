@@ -39,7 +39,7 @@ namespace VCLG {
     public:
         enum class VarKind { Input, Output, Parameter, AutoParameter, Constant, Host, State };
 
-        /** Classifies `tu`; reports (as `NodeDefinitionError`, naming `nodeName`) and returns nullopt if it isn't a node. */
+        /** Classifies `tu`; reports (a node error naming `nodeName`) and returns nullopt if it isn't a node. */
         static std::optional<NodeModel> Build(VCL::TranslationUnitDecl* tu, const NodeAttributes& attributes,
             VCL::DiagnosticReporter& reporter, llvm::StringRef nodeName);
 

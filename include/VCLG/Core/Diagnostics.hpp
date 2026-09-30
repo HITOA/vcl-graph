@@ -9,6 +9,14 @@
 namespace VCLG {
 
     /**
+     * Reports an error in a node's source, as "invalid node: <message>". VCL knows nothing of nodes:
+     * this is its generic CustomDiagnostic.
+     */
+    inline VCL::DiagnosticReporter::ReportHandle ReportNodeError(VCL::DiagnosticReporter& reporter, const std::string& message) {
+        return reporter.Error(VCL::Diagnostic::CustomDiagnostic, "invalid node: " + message);
+    }
+
+    /**
      * Marks the diagnostics reported on this thread, while the scope is alive, as coming from one
      * node of the graph. The compile passes open a scope around each node they process; a
      * DiagnosticConsumer reads `Current()` from `HandleDiagnostic` to know which node failed.

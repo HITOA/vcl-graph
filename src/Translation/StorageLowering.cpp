@@ -1,5 +1,7 @@
 #include "Lowering.hpp"
 
+#include <VCLG/Core/Diagnostics.hpp>
+
 #include <VCL/AST/Expr.hpp>
 #include <VCL/AST/Stmt.hpp>
 #include <VCL/Sema/TreeTransform.hpp>
@@ -106,7 +108,7 @@ namespace {
             if (model.IsEntryPoint(callee)) {
                 // An entry point called by another gets the same ports.
                 if (!model.IsEntryPoint(currentFunction)) {
-                    context.reporter.Error(VCL::Diagnostic::NodeDefinitionError, "entry point '"
+                    VCLG::ReportNodeError(context.reporter, "entry point '"
                             + callee->GetIdentifierInfo()->GetName().str() + "' can only be called from an entry point")
                         .AddHint(VCL::DiagnosticHint{ range })
                         .SetCompilerInfo(__FILE__, __func__, __LINE__)

@@ -1,4 +1,5 @@
 #include <VCLG/Translation/NodeRules.hpp>
+#include <VCLG/Core/Diagnostics.hpp>
 
 #include <VCL/AST/Expr.hpp>
 #include <VCL/AST/Stmt.hpp>
@@ -132,7 +133,7 @@ bool VCLG::CheckNodeRules(const NodeModel& model, VCL::DiagnosticReporter& repor
     const NodeAttributes& attributes = model.GetAttributes();
 
     auto error = [&](const std::string& message, VCL::SourceRange range) {
-        reporter.Error(VCL::Diagnostic::NodeDefinitionError, message)
+        ReportNodeError(reporter, message)
             .AddHint(VCL::DiagnosticHint{ range })
             .SetCompilerInfo(__FILE__, __func__, __LINE__)
             .Report();

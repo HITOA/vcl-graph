@@ -1,4 +1,5 @@
 #include <VCLG/Translation/NodeModel.hpp>
+#include <VCLG/Core/Diagnostics.hpp>
 
 #include <string>
 
@@ -17,7 +18,7 @@ std::optional<VCLG::NodeModel> VCLG::NodeModel::Build(VCL::TranslationUnitDecl* 
     llvm::SmallVector<VCL::VarDecl*, 4> outputs{};
 
     auto fail = [&](const char* message) -> std::optional<NodeModel> {
-        reporter.Error(VCL::Diagnostic::NodeDefinitionError, std::string{ message } + " (" + nodeName.str() + ")")
+        ReportNodeError(reporter, std::string{ message } + " (" + nodeName.str() + ")")
             .SetCompilerInfo(__FILE__, __func__, __LINE__)
             .Report();
         return std::nullopt;

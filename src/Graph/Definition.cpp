@@ -140,7 +140,7 @@ std::optional<std::string> VCLG::DefinitionRegistry::GetStringAttribute(VCL::Att
         return std::nullopt;
     VCL::ConstantValue* arg = attribute->GetArgs()[0];
     if (arg->GetConstantValueClass() != VCL::ConstantValue::ConstantStringClass) {
-        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::NodeDefinitionError,
+        ReportNodeError(cc.GetDiagnosticReporter(),
                 "[" + attribute->GetDefinition()->GetIdentifierInfo()->GetName().str() + "] expects a string argument")
             .AddHint(VCL::DiagnosticHint{ decl->GetSourceRange() })
             .Report();
