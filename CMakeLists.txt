@@ -36,6 +36,11 @@ add_library(vclg STATIC
     src/Graph/GraphContext.cpp
     src/Graph/GraphInstance.cpp
     src/Graph/Node.cpp
+    src/Translation/NodeModel.cpp
+    src/Translation/NodeRules.cpp
+    src/Translation/SourceNodeCompilation.cpp
+    src/Translation/StorageLowering.cpp
+    src/Translation/Translation.cpp
 )
 target_include_directories(vclg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

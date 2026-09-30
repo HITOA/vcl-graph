@@ -3,10 +3,7 @@
 #include <VCLG/Graph/Port.hpp>
 #include <VCLG/Graph/Parameter.hpp>
 #include <VCLG/Graph/Converter.hpp>
-#include <VCLG/AST/ASTParameterWriter.hpp>
-#include <VCLG/AST/ASTAutoParameterSubstitution.hpp>
-#include <VCLG/AST/ASTPortTypeOverrideWriter.hpp>
-#include <VCLG/AST/ASTInputConstWriter.hpp>
+#include <VCLG/Translation/SourceNodeCompilation.hpp>
 #include <VCLG/Core/Diagnostics.hpp>
 
 #include <VCL/Core/SourceManager.hpp>
@@ -173,62 +170,10 @@ bool VCLG::CodeGenGraph::EmitSourceNode(NodeIndex index) {
     if (!VCLG_CHECK(cc.GetDiagnosticReporter(), source != nullptr && nodeDefinition != nullptr))
         return false;
 
-    std::shared_ptr<VCL::CompilerInstance> instance = cc.CreateInstance();
+    SourceNodeCompilation compilation{ graphContext, cc, node, source, node.path };
+    std::shared_ptr<VCL::CompilerInstance> instance = compilation.GetInstance();
     nodeCompilerInstances.push_back(instance);
-    
-    instance->SetManglingPrefix(node.path);
-    instance->CreateASTContext();
-    instance->CreateExportSymbolTable();
-    instance->CreateImportModuleTable();
-    instance->CreateDefineTable();
-
-    VCL::Lexer lexer{ source->GetBufferRef(), 
-        instance->GetCompilerContext().GetDiagnosticReporter(), 
-        instance->GetCompilerContext().GetIdentifierTable() };
-    VCL::TokenStream stream{ lexer };
-    VCL::Sema sema{ 
-        instance->GetCompilerContext(),
-        instance->GetASTContext(),
-        instance->GetCompilerContext().GetDiagnosticReporter(),
-        instance->GetCompilerContext().GetIdentifierTable(),
-        instance->GetCompilerContext().GetDirectiveRegistry(),
-        instance->GetExportSymbolTable(),
-        instance->GetImportModuleTable(),
-        instance->GetDefineTable() };
-    VCL::Parser parser{ stream, sema, instance->GetCompilerContext().GetAttributeTable() };
-
-    ASTParameterWriter parameterWriter{ 
-        instance->GetASTContext(),
-        instance->GetCompilerContext().GetIdentifierTable(), 
-        nodeDefinition->GetParameters(), node.parameters };
-
-    ASTAutoParameterSubstitution autoParameterWriter{
-        sema,
-        instance->GetCompilerContext().GetIdentifierTable(),
-        node.substitutions, 
-        nodeDefinition->GetAutoParameters() };
-
-    // Concrete inputs whose type differs in this copy (e.g. promoted by a converter).
-    llvm::SmallVector<VCL::Type*, 4> portTypeOverrides{};
-    for (const ElaboratedGraph::Input& input : node.inputs)
-        portTypeOverrides.push_back(!input.isDependent && input.type != input.declaredType ? input.type : nullptr);
-
-    ASTPortTypeOverrideWriter portWriter{ 
-        instance->GetASTContext(),
-        instance->GetCompilerContext().GetIdentifierTable(), 
-        nodeDefinition->GetPorts(), portTypeOverrides };
-
-    ASTInputConstWriter inputConstWriter{ graphContext.GetDefinitionRegistry().GetInputAttributeDefinition() };
-
-    VCL::MultiplexerASTConsumer astConsumer{};
-    astConsumer.PushConsumer(&parameterWriter);
-    astConsumer.PushConsumer(&autoParameterWriter);
-    astConsumer.PushConsumer(&portWriter);
-    astConsumer.PushConsumer(&inputConstWriter); // after portWriter, which replaces some input types
-
-    parser.SetASTConsumer(&astConsumer);
-    
-    if (!parser.Parse())
+    if (!compilation.Parse())
         return false;
     
     for (auto pair : instance->GetImportModuleTable())

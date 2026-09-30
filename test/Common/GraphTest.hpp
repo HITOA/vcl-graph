@@ -8,6 +8,7 @@
 #include <VCLG/Graph/Elaboration.hpp>
 #include <VCLG/CodeGen/CodeGenGraph.hpp>
 #include <VCLG/Core/Diagnostics.hpp>
+#include <VCLG/Translation/Translation.hpp>
 
 #include <VCL/Core/SourceManager.hpp>
 #include <VCL/Core/Diagnostic.hpp>
@@ -18,6 +19,7 @@
 #include <llvm/IR/Verifier.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -29,6 +31,8 @@ namespace Test {
     class RecordingDiagnosticConsumer : public VCL::TextDiagnosticConsumer {
     public:
         void HandleTextDiagnostic(VCL::Diagnostic&& diagnostic, const std::string& message) override {
+            if (diagnostic.GetSeverity() == VCL::Diagnostic::SeverityLevel::Warning)
+                warnings.push_back(message);
             if (diagnostic.GetSeverity() != VCL::Diagnostic::SeverityLevel::Error)
                 return;
             const VCLG::NodeDiagnosticScope* scope = VCLG::NodeDiagnosticScope::Current();
@@ -48,8 +52,16 @@ namespace Test {
             return nullptr;
         }
 
+        inline bool HasWarning(const std::string& text) const {
+            for (const std::string& warning : warnings)
+                if (warning.find(text) != std::string::npos)
+                    return true;
+            return false;
+        }
+
         std::vector<std::string> errors{};
         std::vector<std::string> errorPaths{};
+        std::vector<std::string> warnings{};
     };
 
     // A compiled graph, ready to run. Globals are looked up by their mangled name, which is the
@@ -62,6 +74,19 @@ namespace Test {
 
         template<typename T>
         inline T* Global(const std::string& name) { return (T*)session->Lookup(name); }
+    };
+
+    // A node translated on its own (not through the graph codegen), and its module.
+    struct Translation {
+        VCLG::ElaboratedGraph elaborated{};
+        std::optional<VCLG::TranslatedNode> node{};
+        llvm::orc::ThreadSafeModule module{};
+        std::unique_ptr<VCL::ExecutionSession> session{};
+
+        inline const VCLG::NodeInterface& Interface() const { return node->interface; }
+
+        template<typename F>
+        inline F* Function(const std::string& symbol) { return (F*)session->Lookup(symbol); }
     };
 
     class GraphTest {
@@ -131,6 +156,48 @@ namespace Test {
             return compiled;
         }
 
+        // Elaborates `graph` and translates `node` (a source node of the root graph) into its own
+        // module; nullopt in `node` if the translation failed.
+        Translation Translate(VCLG::GraphInstance& graph, VCLG::Node* node) {
+            Translation translation{};
+            translation.elaborated = VCLG::Elaborate(graph);
+            REQUIRE(translation.elaborated.Succeeded());
+            std::string path = "g" + std::to_string(graph.GetIdentity()) + "/n" + std::to_string(node->GetIdentity());
+            const VCLG::ElaboratedGraph::Node* elaboratedNode = nullptr;
+            for (const VCLG::ElaboratedGraph::Node& candidate : translation.elaborated.GetNodes())
+                if (candidate.path == path)
+                    elaboratedNode = &candidate;
+            REQUIRE(elaboratedNode != nullptr);
+            translation.module = MakeModule();
+            translation.module.withModuleDo([&](llvm::Module& m) {
+                translation.node = VCLG::TranslateSourceNode(context, context.GetCompilerContext(), *elaboratedNode, m);
+            });
+            return translation;
+        }
+
+        // Translates `name`, alone in a graph.
+        Translation Translate(const std::string& name) {
+            auto graph = context.CreateInstance();
+            graphs.push_back(graph);
+            VCLG::SourceNode* node = AddNode(*graph, name);
+            node->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
+            return Translate(*graph, node);
+        }
+
+        // Links the translated module's libraries and JIT-compiles it.
+        void Run(Translation& translation) {
+            REQUIRE(translation.node.has_value());
+            bool linked = translation.module.withModuleDo([&](llvm::Module& m) {
+                return VCLG::LinkLibraries(m, *translation.node->instance, context.GetCompilerContext().GetDiagnosticReporter())
+                    && !llvm::verifyModule(m, &llvm::errs());
+            });
+            REQUIRE(linked);
+            translation.session = std::make_unique<VCL::ExecutionSession>();
+            translation.session->DefineDefaultMemIntrinsic();
+            translation.session->DefineDefaultMathIntrinsic();
+            REQUIRE(translation.session->SubmitModule(std::move(translation.module)));
+        }
+
     private:
         static inline std::shared_ptr<VCL::CompilerInvocation> MakeInvocation(RecordingDiagnosticConsumer& consumer) {
             auto invocation = std::make_shared<VCL::CompilerInvocation>();
@@ -150,6 +217,8 @@ namespace Test {
         RecordingDiagnosticConsumer consumer{};
         std::shared_ptr<VCL::CompilerInvocation> invocation;
         VCLG::GraphContext context;
+        // Graphs made by the fixture (Translate), destroyed before the context.
+        std::vector<std::shared_ptr<VCLG::GraphInstance>> graphs{};
     };
 
 }

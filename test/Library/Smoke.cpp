@@ -4,6 +4,10 @@
 // 64 calls to Main), and the two runs must hash its outputs (and the host's audio output, when
 // the node imports it) to the same value.
 //
+// Each node is also translated on its own (A2 Phase 3: `VCLG::TranslateSourceNode`); the output
+// file's fifth column lists its outputs as `<name>:<proven|promised|held>` (always written as
+// LLVM proves, as the author promises with [AlwaysWritten], or neither: the output persists).
+//
 // Enabled when GROG_RESOURCES points at a Grog resources directory (holding `Nodes/` and
 // `Libraries/`), skipped otherwise. Two more variables are optional:
 //   - GROG_SMOKE_OUT: writes one line per node to this file:
@@ -18,6 +22,7 @@
 
 #include <VCLG/CodeGen/Optimizer.hpp>
 #include <VCLG/Graph/Definition.hpp>
+#include <VCLG/Translation/Translation.hpp>
 
 #include <VCL/Core/Target.hpp>
 
@@ -161,6 +166,7 @@ namespace {
         std::string status{};
         uint64_t checksum = 0;
         double compileMs = 0.0;
+        std::string outputs{};
     };
 
     std::map<std::string, std::string> ReadReference(const char* path) {
@@ -213,12 +219,16 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
         NodeResult& result = results[name];
         consumer.errors.clear();
         consumer.errorPaths.clear();
+        consumer.warnings.clear();
 
         auto report = [&](const std::string& status) {
             result.status = status;
             std::string errors{};
             for (const std::string& error : consumer.errors)
                 errors += "\n  " + error;
+            for (const std::string& warning : consumer.warnings)
+                if (warning.find("[AlwaysWritten]") != std::string::npos)
+                    errors += "\n  " + warning;
             UNSCOPED_INFO(name << ": " << status << errors);
             CHECK(status == "ok");
         };
@@ -338,6 +348,43 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
         if (status == "ok" && checksums[0] != checksums[1])
             status = "nondeterministic";
         result.checksum = checksums[0];
+
+        // The translation: the node translates, compiles, and gets its always-written proof.
+        if (status == "ok") {
+            VCLG::ElaboratedGraph elaborated = VCLG::Elaborate(*graph);
+            std::string path = "g" + std::to_string(graph->GetIdentity()) + "/n" + std::to_string(node->GetIdentity());
+            const VCLG::ElaboratedGraph::Node* elaboratedNode = nullptr;
+            for (const VCLG::ElaboratedGraph::Node& candidate : elaborated.GetNodes())
+                if (candidate.path == path)
+                    elaboratedNode = &candidate;
+            std::optional<VCLG::TranslatedNode> translated{};
+            if (elaboratedNode != nullptr) {
+                llvm::orc::ThreadSafeModule module{
+                    cc.GetLLVMContext().withContextDo([](llvm::LLVMContext* c) {
+                        return std::make_unique<llvm::Module>("translated", *c);
+                    }),
+                    cc.GetLLVMContext() };
+                module.withModuleDo([&](llvm::Module& m) {
+                    translated = VCLG::TranslateSourceNode(context, cc, *elaboratedNode, m);
+                });
+            }
+            if (!translated) {
+                status = "translate";
+            } else {
+                const VCLG::NodeInterface& interface = translated->interface;
+                for (uint32_t i = 0; i < definition->GetPorts().size(); ++i) {
+                    const VCLG::SourcePortDefinition& port = definition->GetPorts()[i];
+                    if (port.IsInput())
+                        continue;
+                    const char* kind = interface.ports[i].provenAlwaysWritten ? "proven" : port.IsAlwaysWritten() ? "promised" : "held";
+                    result.outputs += (result.outputs.empty() ? "" : ",") + port.GetName() + ":" + kind;
+                }
+            }
+        }
+        // No node warning: e.g. no [AlwaysWritten] promise the node's code contradicts.
+        if (status == "ok" && std::any_of(consumer.warnings.begin(), consumer.warnings.end(),
+                [](const std::string& warning) { return warning.find("[AlwaysWritten]") != std::string::npos; }))
+            status = "warning";
         report(status);
     }
 
@@ -345,7 +392,7 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
         std::ofstream file{ out, std::ios::trunc };
         for (const auto& [name, result] : results)
             file << name << '\t' << result.status << '\t' << std::hex << result.checksum << std::dec << '\t'
-                 << (int64_t)result.compileMs << '\n';
+                 << (int64_t)result.compileMs << '\t' << result.outputs << '\n';
     }
 
     if (const char* referencePath = std::getenv("GROG_SMOKE_REFERENCE")) {
@@ -357,6 +404,12 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
             INFO(name);
             CHECK(reference[name] == actual.str());
         }
+    }
+
+    // Outputs that must persist are never proven (research §6.3).
+    if (auto it = results.find("Midi/Mono MIDI Note"); it != results.end() && it->second.status == "ok") {
+        INFO(it->second.outputs);
+        CHECK(it->second.outputs.find("proven") == std::string::npos);
     }
 
     size_t passed = std::count_if(results.begin(), results.end(), [](const auto& r) { return r.second.status == "ok"; });

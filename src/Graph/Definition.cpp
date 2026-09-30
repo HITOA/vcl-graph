@@ -1,6 +1,7 @@
 #include <VCLG/Graph/Definition.hpp>
 
 #include <VCLG/Graph/Directives.hpp>
+#include <VCLG/Translation/NodeRules.hpp>
 #include <VCLG/AST/ASTInputConstWriter.hpp>
 #include <VCLG/Core/Diagnostics.hpp>
 
@@ -20,12 +21,13 @@
 VCLG::DefinitionRegistry::DefinitionRegistry(VCL::CompilerContext& cc) : 
         cc{ cc }, definitions{} {
     
-    nodeProcessAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("NodeProcess"), 0, 0);
-    nodeResetAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("NodeReset"), 0, 0);
-    inputAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Input"), 1, 1);
-    outputAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Output"), 1, 1);
-    parameterAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Parameter"), 1, 1);
-    autoParameterAttributeDefinition = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("AutoParameter"), 0, 0);
+    attributes.nodeProcess = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("NodeProcess"), 0, 0);
+    attributes.nodeReset = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("NodeReset"), 0, 0);
+    attributes.input = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Input"), 1, 1);
+    attributes.output = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Output"), 1, 1);
+    attributes.parameter = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Parameter"), 1, 1);
+    attributes.autoParameter = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("AutoParameter"), 0, 0);
+    attributes.alwaysWritten = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("AlwaysWritten"), 0, 0);
 
     VCL::IdentifierInfo* nodeNameDirectiveIdentifier = cc.GetIdentifierTable().Get("node_name");
     VCL::IdentifierInfo* graphInputDirectiveIdentifier = cc.GetIdentifierTable().Get("set_as_graph_input");
@@ -53,7 +55,7 @@ void VCLG::DefinitionRegistry::Reset() {
 
 VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition(VCL::Source* source) {
     // Inputs are read-only: a node writing one is rejected when it's loaded.
-    ASTInputConstWriter inputConstWriter{ inputAttributeDefinition };
+    ASTInputConstWriter inputConstWriter{ attributes.input };
     VCL::ParseSyntaxOnlyAction action{};
     action.SetASTConsumer(&inputConstWriter);
 
@@ -65,73 +67,34 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
         return nullptr;
 
     VCL::TranslationUnitDecl* tu = instance->GetASTContext().GetTranslationUnitDecl();
-
-    std::vector<SourcePortDefinition> ports{};
-    std::vector<SourcePortDefinition> outPorts{};
-    std::vector<SourceParameterDefinition> parameters{};
-    std::vector<SourceAutoParameterDefinition> autoParameters{};
-    bool hasInstanceData = false;
-    VCL::FunctionDecl* entrypoint = nullptr;
-    VCL::FunctionDecl* reset = nullptr;
-
-    auto fail = [&](const char* message) -> SourceNodeDefinition* {
-        cc.GetDiagnosticReporter().Error(VCL::Diagnostic::NodeDefinitionError, std::string{ message } + " (" + source->GetBufferIdentifier().str() + ")")
-            .SetCompilerInfo(__FILE__, __func__, __LINE__)
-            .Report();
+    std::optional<NodeModel> model = NodeModel::Build(tu, attributes, cc.GetDiagnosticReporter(), source->GetBufferIdentifier());
+    if (!model || !CheckNodeRules(*model, cc.GetDiagnosticReporter()))
         return nullptr;
-    };
 
-    for (auto it = tu->Begin(); it != tu->End(); ++it) {
-        switch (it->GetDeclClass()) {
-            case VCL::Decl::VarDeclClass: {
-                VCL::VarDecl* decl = (VCL::VarDecl*)it.Get();
-                if (decl->HasAttribute(inputAttributeDefinition) != nullptr)
-                    ports.push_back(CreateSourcePortDefinition(decl, autoParameters));
-                else if (decl->HasAttribute(outputAttributeDefinition) != nullptr)
-                    outPorts.push_back(CreateSourcePortDefinition(decl, autoParameters));
-                else if (decl->HasAttribute(parameterAttributeDefinition) != nullptr) {
-                    parameters.push_back(CreateSourceParameterDefinition(decl));
-                    hasInstanceData = true;
-                } else if (decl->HasAttribute(autoParameterAttributeDefinition) != nullptr) {
-                    autoParameters.push_back(CreateSourceAutoParameterDefinition(decl));
-                    hasInstanceData = true;
-                } else if (!hasInstanceData)
-                    hasInstanceData = true;
-                break;
-            }
-            case VCL::Decl::TypeAliasDeclClass: {
-                VCL::TypeAliasDecl* decl = (VCL::TypeAliasDecl*)it.Get();
-                if (decl->HasAttribute(autoParameterAttributeDefinition) != nullptr) {
-                    autoParameters.push_back(CreateSourceAutoParameterDefinition(decl));
-                    hasInstanceData = true;
-                }
-                break;
-            }
-            case VCL::Decl::FunctionDeclClass: {
-                VCL::FunctionDecl* decl = (VCL::FunctionDecl*)it.Get();
-                if (decl->HasAttribute(nodeProcessAttributeDefinition) != nullptr) {
-                    if (entrypoint != nullptr)
-                        return fail("more than one [NodeProcess] function");
-                    entrypoint = decl;
-                } else if (decl->HasAttribute(nodeResetAttributeDefinition) != nullptr) {
-                    if (reset != nullptr)
-                        return fail("more than one [NodeReset] function");
-                    reset = decl;
-                }
-                break;
-            }
-        }
-    }
-
-    if (entrypoint == nullptr)
-        return fail("no [NodeProcess] function");
-
-    ports.insert(ports.end(), outPorts.begin(), outPorts.end());
+    // AutoParameters first: a port's type may depend on one.
+    std::vector<SourceAutoParameterDefinition> autoParameters{};
+    for (VCL::NamedDecl* decl : model->GetAutoParameters())
+        autoParameters.push_back(CreateSourceAutoParameterDefinition(decl));
+    std::vector<SourcePortDefinition> ports{};
+    for (VCL::VarDecl* decl : model->GetPorts())
+        ports.push_back(CreateSourcePortDefinition(decl, model->IsInput(decl), autoParameters));
+    std::vector<SourceParameterDefinition> parameters{};
+    for (VCL::VarDecl* decl : model->GetParameters())
+        parameters.push_back(CreateSourceParameterDefinition(decl));
+    std::vector<SourceStateDefinition> stateVariables{};
+    for (VCL::VarDecl* decl : model->GetState())
+        stateVariables.push_back(SourceStateDefinition{ decl->GetIdentifierInfo()->GetName().str(), decl });
+    bool hasInstanceData = !autoParameters.empty();
+    for (auto it = tu->Begin(); it != tu->End(); ++it)
+        if (it->GetDeclClass() == VCL::Decl::VarDeclClass && !model->IsPort(it.Get()))
+            hasInstanceData = true;
+    VCL::FunctionDecl* entrypoint = model->GetProcess();
+    VCL::FunctionDecl* reset = model->GetReset();
 
     std::string displayName = GetStringDefine(instance, "NODE_NAME");
 
     std::unique_ptr<SourceNodeDefinition> ownedDefinition = std::make_unique<SourceNodeDefinition>(instance, displayName, entrypoint, reset, 
-        hasInstanceData, std::move(ports), std::move(parameters), std::move(autoParameters));
+        hasInstanceData, std::move(ports), std::move(parameters), std::move(autoParameters), std::move(stateVariables));
     SourceNodeDefinition* definition = ownedDefinition.get();
     definitions.insert({ source->GetBufferIdentifier(), std::move(ownedDefinition) });
 
@@ -143,31 +106,24 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
     return definition;
 }
 
-VCLG::SourcePortDefinition VCLG::DefinitionRegistry::CreateSourcePortDefinition(VCL::VarDecl* varDecl, 
+VCLG::SourcePortDefinition VCLG::DefinitionRegistry::CreateSourcePortDefinition(VCL::VarDecl* varDecl, bool isInput,
         llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters) {
     std::string name = varDecl->GetIdentifierInfo()->GetName().str();
-    std::string displayName = name;
-    bool isInput = false;
-
-    if (VCL::AttributeInstance* attribute = varDecl->HasAttribute(inputAttributeDefinition); attribute != nullptr) {
-        displayName = GetStringAttribute(attribute, varDecl).value_or(name);
-        isInput = true;
-    } else if (VCL::AttributeInstance* attribute = varDecl->HasAttribute(outputAttributeDefinition); attribute != nullptr) {
-        displayName = GetStringAttribute(attribute, varDecl).value_or(name);
-        isInput = false;
-    }
+    VCL::AttributeInstance* attribute = varDecl->HasAttribute(isInput ? attributes.input : attributes.output);
+    std::string displayName = GetStringAttribute(attribute, varDecl).value_or(name);
 
     VCL::Type* type = varDecl->GetValueType().GetType();
     bool isDependent = IsPortAutoParameterDependent(type, autoParameters);
+    bool isAlwaysWritten = !isInput && varDecl->HasAttribute(attributes.alwaysWritten) != nullptr;
 
-    return SourcePortDefinition{ name, displayName, isInput, varDecl, isDependent };
+    return SourcePortDefinition{ name, displayName, isInput, varDecl, isDependent, isAlwaysWritten };
 }
 
 VCLG::SourceParameterDefinition VCLG::DefinitionRegistry::CreateSourceParameterDefinition(VCL::VarDecl* varDecl) {
     std::string name = varDecl->GetIdentifierInfo()->GetName().str();
     std::string displayName = name;
 
-    if (VCL::AttributeInstance* attribute = varDecl->HasAttribute(parameterAttributeDefinition); attribute != nullptr) {
+    if (VCL::AttributeInstance* attribute = varDecl->HasAttribute(attributes.parameter); attribute != nullptr) {
         displayName = GetStringAttribute(attribute, varDecl).value_or(name);
     }
 

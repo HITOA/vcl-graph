@@ -1,5 +1,7 @@
 #pragma once
 
+#include <VCLG/Translation/NodeModel.hpp>
+
 #include <VCL/Core/Source.hpp>
 #include <VCL/AST/Decl.hpp>
 #include <VCL/Frontend/CompilerContext.hpp>
@@ -18,14 +20,18 @@ namespace VCLG {
     
     class SourcePortDefinition {
     public:
-        SourcePortDefinition(const std::string& name, const std::string& displayName, bool isInput, VCL::VarDecl* decl, bool isDependent) :
-                name{ name }, displayName{ displayName }, isInput{ isInput }, decl{ decl }, isDependent{ isDependent } {}
+        SourcePortDefinition(const std::string& name, const std::string& displayName, bool isInput, VCL::VarDecl* decl, bool isDependent,
+                bool isAlwaysWritten = false) :
+                name{ name }, displayName{ displayName }, isInput{ isInput }, decl{ decl }, isDependent{ isDependent },
+                isAlwaysWritten{ isAlwaysWritten } {}
 
         inline const std::string& GetName() const { return name; }
         inline const std::string& GetDisplayName() const { return displayName; }
         inline bool IsInput() const { return isInput; }
         inline VCL::VarDecl* GetDecl() const { return decl; }
         inline bool IsDependent() const { return isDependent; }
+        /** The author promises (`[AlwaysWritten]`) that every call of the node writes the whole output before reading it. */
+        inline bool IsAlwaysWritten() const { return isAlwaysWritten; }
 
     private:
         std::string name;
@@ -33,6 +39,20 @@ namespace VCLG {
         bool isInput;
         VCL::VarDecl* decl;
         bool isDependent;
+        bool isAlwaysWritten;
+    };
+
+    /** A mutable module-level variable that isn't a port: a field of the node's `State` once translated. */
+    class SourceStateDefinition {
+    public:
+        SourceStateDefinition(const std::string& name, VCL::VarDecl* decl) : name{ name }, decl{ decl } {}
+
+        inline const std::string& GetName() const { return name; }
+        inline VCL::VarDecl* GetDecl() const { return decl; }
+
+    private:
+        std::string name;
+        VCL::VarDecl* decl;
     };
 
     class SourceParameterDefinition {
@@ -79,10 +99,10 @@ namespace VCLG {
         SourceNodeDefinition() = delete;
         SourceNodeDefinition(std::shared_ptr<VCL::CompilerInstance> instance, const std::string& displayName, VCL::FunctionDecl* entrypoint, 
             VCL::FunctionDecl* reset, bool hasInstanceData, std::vector<SourcePortDefinition> ports, std::vector<SourceParameterDefinition> parameters,
-            std::vector<SourceAutoParameterDefinition> autoParameters) 
+            std::vector<SourceAutoParameterDefinition> autoParameters, std::vector<SourceStateDefinition> stateVariables = {}) 
                 : instance{ instance }, displayName{ displayName }, flags{ DefinitionNodeFlag::None }, entrypoint{ entrypoint }, reset{ reset },
                     hasInstanceData{ hasInstanceData }, ports{ std::move(ports) }, parameters{ std::move(parameters) },
-                    autoParameters{ std::move(autoParameters) } {}
+                    autoParameters{ std::move(autoParameters) }, stateVariables{ std::move(stateVariables) } {}
         SourceNodeDefinition(const SourceNodeDefinition& other) = delete;
         SourceNodeDefinition(SourceNodeDefinition&& other) = delete;
         ~SourceNodeDefinition() = default;
@@ -98,6 +118,8 @@ namespace VCLG {
         inline llvm::ArrayRef<SourcePortDefinition> GetPorts() const { return ports; }
         inline llvm::ArrayRef<SourceParameterDefinition> GetParameters() const { return parameters; }
         inline llvm::ArrayRef<SourceAutoParameterDefinition> GetAutoParameters() const { return autoParameters; }
+        /** In declaration order: the order of the fields of every variant's `State`. */
+        inline llvm::ArrayRef<SourceStateDefinition> GetStateVariables() const { return stateVariables; }
 
         inline bool HasFlag(DefinitionNodeFlag flag) const { return ((uint32_t)flags & (uint32_t)flag) != 0; }
         inline void AddFlag(DefinitionNodeFlag flag) { this->flags = (DefinitionNodeFlag)((uint32_t)flags | (uint32_t)flag); }
@@ -113,6 +135,7 @@ namespace VCLG {
         std::vector<SourcePortDefinition> ports;
         std::vector<SourceParameterDefinition> parameters;
         std::vector<SourceAutoParameterDefinition> autoParameters;
+        std::vector<SourceStateDefinition> stateVariables;
     };
 
     class DefinitionRegistry : public llvm::RefCountedBase<DefinitionRegistry> {
@@ -130,11 +153,12 @@ namespace VCLG {
 
         void Reset();
 
-        inline VCL::AttributeDefinition* GetInputAttributeDefinition() const { return inputAttributeDefinition; }
+        inline VCL::AttributeDefinition* GetInputAttributeDefinition() const { return attributes.input; }
+        inline const NodeAttributes& GetNodeAttributes() const { return attributes; }
 
     private:
         SourceNodeDefinition* CreateSourceNodeDefinition(VCL::Source* source);
-        SourcePortDefinition CreateSourcePortDefinition(VCL::VarDecl* varDecl, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters);
+        SourcePortDefinition CreateSourcePortDefinition(VCL::VarDecl* varDecl, bool isInput, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters);
         SourceParameterDefinition CreateSourceParameterDefinition(VCL::VarDecl* varDecl);
         SourceAutoParameterDefinition CreateSourceAutoParameterDefinition(VCL::NamedDecl* decl);
 
@@ -152,12 +176,7 @@ namespace VCLG {
         VCL::CompilerContext& cc;
         llvm::StringMap<std::unique_ptr<SourceNodeDefinition>> definitions;
 
-        VCL::AttributeDefinition* nodeProcessAttributeDefinition;
-        VCL::AttributeDefinition* nodeResetAttributeDefinition;
-        VCL::AttributeDefinition* inputAttributeDefinition;
-        VCL::AttributeDefinition* outputAttributeDefinition;
-        VCL::AttributeDefinition* parameterAttributeDefinition;
-        VCL::AttributeDefinition* autoParameterAttributeDefinition;
+        NodeAttributes attributes{};
     };
 
 }

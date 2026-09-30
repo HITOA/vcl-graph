@@ -15,6 +15,8 @@ add_executable(vclg_test
     Graph/Order.cpp
     Graph/Subgraph.cpp
     Library/Smoke.cpp
+    Translation/Rules.cpp
+    Translation/Translation.cpp
 )
 target_link_libraries(vclg_test PRIVATE vclg Catch2::Catch2WithMain)
 target_include_directories(vclg_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
