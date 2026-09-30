@@ -14,6 +14,7 @@
 
 namespace VCLG {
     class GraphInstance;
+    class VariantCache;
 
     class GraphContext {
     public:
@@ -30,6 +31,8 @@ namespace VCLG {
         inline VCLG::DefinitionRegistry& GetDefinitionRegistry() { return *definitionRegistry; }
         inline VCL::ASTContext& GetGlobalASTContext() { return *globalASTContext; }
         inline std::vector<Converter*>& GetConverters() { return converters; }
+        /** The compiled variants of source nodes, kept between compiles (`state-as-data.md` §7.3). */
+        inline VariantCache& GetVariantCache() { return *variantCache; }
 
         void AddConverter(Converter* converter);
 
@@ -51,6 +54,9 @@ namespace VCLG {
         std::vector<Converter*> converters;
 
         IdentityProvider identityProvider;
+
+        // Its modules live in the compiler context's LLVM context: destroyed before it.
+        std::unique_ptr<VariantCache> variantCache;
 
         // A code generator on a module of its own, only used for its type conversion; created on
         // first use. Last: it refers to the compiler context and the global AST context.

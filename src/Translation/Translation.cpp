@@ -10,7 +10,10 @@
 #include <VCL/CodeGen/CodeGenModule.hpp>
 #include <VCL/Core/SourceManager.hpp>
 #include <VCL/Frontend/ModuleCache.hpp>
+#include <VCL/Sema/ModuleTable.hpp>
 
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/Analysis/ValueTracking.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/ConstantRangeList.h>
@@ -21,8 +24,58 @@
 #include <llvm/Support/xxhash.h>
 #include <llvm/Transforms/Utils/Cloning.h>
 
+#include <bit>
+
 
 namespace {
+
+    // A scalar in the variant key: its kind and exact value (floats by their bits).
+    std::string KeyScalar(const VCL::ConstantScalar& value) {
+        using Kind = VCL::BuiltinType::Kind;
+        std::string text = std::to_string((int)value.GetKind()) + ":";
+        switch (value.GetKind()) {
+            case Kind::Bool: return text + (value.Get<bool>() ? "1" : "0");
+            case Kind::Float32: return text + llvm::utohexstr(std::bit_cast<uint32_t>(value.Get<float>()));
+            case Kind::Float64: return text + llvm::utohexstr(std::bit_cast<uint64_t>(value.Get<double>()));
+            case Kind::Int8: return text + std::to_string(value.Get<int8_t>());
+            case Kind::Int16: return text + std::to_string(value.Get<int16_t>());
+            case Kind::Int32: return text + std::to_string(value.Get<int32_t>());
+            case Kind::Int64: return text + std::to_string(value.Get<int64_t>());
+            case Kind::UInt8: return text + std::to_string(value.Get<uint8_t>());
+            case Kind::UInt16: return text + std::to_string(value.Get<uint16_t>());
+            case Kind::UInt32: return text + std::to_string(value.Get<uint32_t>());
+            case Kind::UInt64: return text + std::to_string(value.Get<uint64_t>());
+            default: return text + "?";
+        }
+    }
+
+    // The libraries `table` imports, and theirs (§7.3).
+    void CollectLibraries(VCL::ModuleTable& table, bool direct, VCL::SourceManager& sources,
+            std::vector<VCLG::LibraryDependency>& libraries, llvm::SmallPtrSetImpl<VCL::Module*>& seen) {
+        for (auto import : table) {
+            VCL::Module* module = import.second;
+            if (!seen.insert(module).second) {
+                // Already listed as a transitive import: a direct one is linked.
+                if (direct)
+                    for (VCLG::LibraryDependency& library : libraries)
+                        if (library.source == module->GetSourceName())
+                            library.direct = true, library.name = import.first;
+                continue;
+            }
+            VCLG::LibraryDependency library{};
+            library.name = import.first;
+            library.source = module->GetSourceName();
+            library.direct = direct;
+            if (VCL::Source* source = sources.GetSourceFromName(library.source)) {
+                library.buffer = source->GetBufferRef().getBufferStart();
+                library.hash = llvm::xxh3_64bits(source->GetBufferRef().getBuffer());
+            }
+            libraries.push_back(library);
+            std::shared_ptr<VCL::CompilerInstance> instance = module->GetCompilerInstance();
+            if (instance && instance->HasImportModuleTable())
+                CollectLibraries(instance->GetImportModuleTable(), false, sources, libraries, seen);
+        }
+    }
 
     // `State`'s layout and each port's size, from the emitted types (`state-as-data.md` §4.3):
     // later lowerings (packing) change the LLVM types, not the AST's.
@@ -159,6 +212,52 @@ namespace {
 
 }
 
+std::string VCLG::VariantKey::ManglingPrefix() const {
+    std::string hex = llvm::utohexstr(hash, true);
+    return "v" + std::string(16 - hex.size(), '0') + hex;
+}
+
+std::optional<VCLG::VariantKey> VCLG::MakeVariantKey(VCL::CompilerContext& cc, const ElaboratedGraph::Node& node,
+        const TranslationProfile& profile) {
+    VCL::DiagnosticReporter& reporter = cc.GetDiagnosticReporter();
+    VCL::Source* source = cc.GetSourceManager().GetSourceFromName(node.source);
+    if (!VCLG_CHECK(reporter, source != nullptr && node.definition != nullptr))
+        return std::nullopt;
+    const SourceNodeDefinition& definition = *node.definition;
+
+    std::string text = "source " + node.source + "#" + llvm::utohexstr(llvm::xxh3_64bits(source->GetBufferRef().getBuffer()));
+    text += ";width " + std::to_string(cc.GetTarget().GetVectorWidthInByte());
+    text += ";profile";
+    for (TranslationProfile::Step step : profile.steps)
+        text += " " + std::to_string((int)step);
+    for (uint32_t i = 0; i < definition.GetParameters().size(); ++i) {
+        const std::optional<VCL::ConstantScalar>* value = i < node.parameters.size() ? &node.parameters[i] : nullptr;
+        text += ";parameter " + definition.GetParameters()[i].GetName() + "=" + (value && *value ? KeyScalar(**value) : "default");
+    }
+    for (const SourceAutoParameterDefinition& parameter : definition.GetAutoParameters()) {
+        text += ";auto " + parameter.GetName() + "=";
+        VCL::Decl* decl = parameter.GetDecl();
+        if (!node.substitutions.HasDecl(decl))
+            text += "none";
+        else if (decl->GetDeclClass() == VCL::Decl::TypeAliasDeclClass) {
+            VCL::Type* type = node.substitutions.GetTypeSubstitution((VCL::TypeAliasDecl*)decl);
+            text += type ? VCL::TypePrinter::Print(VCL::QualType{ type }) : "none";
+        } else {
+            VCL::ConstantScalar* value = node.substitutions.GetScalarSubstitution((VCL::VarDecl*)decl);
+            text += value ? KeyScalar(*value) : "none";
+        }
+    }
+    // The port type overrides SourceNodeCompilation applies.
+    for (const ElaboratedGraph::Input& input : node.inputs)
+        if (!input.isDependent && input.type != input.declaredType && input.type != nullptr)
+            text += ";input " + input.name + "=" + VCL::TypePrinter::Print(VCL::QualType{ input.type });
+
+    VariantKey key{};
+    key.hash = llvm::xxh3_64bits(text);
+    key.text = std::move(text);
+    return key;
+}
+
 bool VCLG::LinkLibraries(llvm::Module& module, VCL::CompilerInstance& instance, VCL::DiagnosticReporter& reporter) {
     llvm::Linker linker{ module };
     for (auto import : instance.GetImportModuleTable()) {
@@ -178,12 +277,14 @@ bool VCLG::LinkLibraries(llvm::Module& module, VCL::CompilerInstance& instance, 
 std::optional<VCLG::TranslatedNode> VCLG::TranslateSourceNode(GraphContext& graphContext, VCL::CompilerContext& cc,
         const ElaboratedGraph::Node& node, llvm::Module& module, const TranslationProfile& profile) {
     VCL::DiagnosticReporter& reporter = cc.GetDiagnosticReporter();
-    VCL::Source* source = cc.GetSourceManager().GetSourceFromName(node.source);
-    if (!VCLG_CHECK(reporter, source != nullptr && node.definition != nullptr))
+    std::optional<VariantKey> key = MakeVariantKey(cc, node, profile);
+    if (!key)
         return std::nullopt;
+    VCL::Source* source = cc.GetSourceManager().GetSourceFromName(node.source);
 
-    // 1-2. Parse with what makes this copy, and check.
-    SourceNodeCompilation compilation{ graphContext, cc, node, source, node.path };
+    // 1-2. Parse with what makes this copy, and check. Every instance of the variant has the same
+    // symbols (§7.2).
+    SourceNodeCompilation compilation{ graphContext, cc, node, source, key->ManglingPrefix() };
     if (!compilation.Parse())
         return std::nullopt;
     std::shared_ptr<VCL::CompilerInstance> instance = compilation.GetInstance();
@@ -216,6 +317,9 @@ std::optional<VCLG::TranslatedNode> VCLG::TranslateSourceNode(GraphContext& grap
         return std::nullopt;
 
     TranslatedNode translated{};
+    translated.key = std::move(*key);
+    llvm::SmallPtrSet<VCL::Module*, 8> seen{};
+    CollectLibraries(instance->GetImportModuleTable(), true, cc.GetSourceManager(), translated.libraries, seen);
     translated.instance = instance;
     translated.translationUnit = context.translationUnit;
     NodeInterface& interface = translated.interface;

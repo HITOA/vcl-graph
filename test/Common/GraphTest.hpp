@@ -181,14 +181,18 @@ namespace Test {
             return graph.Connect(from, to);
         }
 
-        // Graph path of a node of the root graph `graph` (the prefix of its symbols, its key).
-        static inline std::string NodePath(VCLG::GraphInstance& graph, VCLG::Node* node) {
-            return "g" + std::to_string(graph.GetIdentity()) + "/n" + std::to_string(node->GetIdentity());
+        // Parameter `name` (its display name) of `node`.
+        static inline VCLG::Parameter* FindParameter(VCLG::SourceNode* node, const std::string& name) {
+            for (VCLG::Parameter* parameter : node->GetParameters())
+                if (parameter->GetDisplayName() == name)
+                    return parameter;
+            FAIL("no parameter " << name);
+            return nullptr;
         }
 
-        // Mangled name of a node's symbol (a function, a constant) compiled in the root graph `graph`.
-        static inline std::string NodeSymbol(VCLG::GraphInstance& graph, VCLG::Node* node, const std::string& variable) {
-            return NodePath(graph, node) + "." + variable;
+        // Graph path of a node of the root graph `graph` (the key of its regions).
+        static inline std::string NodePath(VCLG::GraphInstance& graph, VCLG::Node* node) {
+            return "g" + std::to_string(graph.GetIdentity()) + "/n" + std::to_string(node->GetIdentity());
         }
 
         // What the fixture compiles with: every output observed by the host, so that tests can read
@@ -200,15 +204,18 @@ namespace Test {
         }
 
         // Emits `graph` into a fresh module and passes it to `inspect` (no optimization, nothing
-        // internalized). Returns false if emission or verification failed.
+        // internalized), with the code generator. Returns false if emission or verification failed.
         template<typename F>
-        bool Emit(VCLG::GraphInstance& graph, F&& inspect) {
+        bool Emit(VCLG::GraphInstance& graph, F&& inspect, std::optional<VCLG::CodeGenGraphOptions> options = std::nullopt) {
             llvm::orc::ThreadSafeModule module = MakeModule();
             return module.withModuleDo([&](llvm::Module& m) {
-                VCLG::CodeGenGraph cgg{ context, graph, m, Options() };
+                VCLG::CodeGenGraph cgg{ context, graph, m, options ? *options : Options() };
                 if (!cgg.Emit() || !cgg.LinkNow() || llvm::verifyModule(m, &llvm::errs()))
                     return false;
-                inspect(m);
+                if constexpr (std::is_invocable_v<F, llvm::Module&, VCLG::CodeGenGraph&>)
+                    inspect(m, cgg);
+                else
+                    inspect(m);
                 return true;
             });
         }

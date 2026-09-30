@@ -1,6 +1,7 @@
 #include <VCLG/Graph/GraphContext.hpp>
 
 #include <VCLG/Graph/GraphInstance.hpp>
+#include <VCLG/Translation/VariantCache.hpp>
 
 #include <VCL/CodeGen/CodeGenModule.hpp>
 #include <VCL/Sema/ModuleTable.hpp>
@@ -28,6 +29,7 @@ VCLG::GraphContext::GraphContext(std::shared_ptr<VCL::CompilerInvocation> invoca
 
     definitionRegistry = llvm::makeIntrusiveRefCnt<DefinitionRegistry>(cc);
     globalASTContext = llvm::makeIntrusiveRefCnt<VCL::ASTContext>(cc.GetTypeCache());
+    variantCache = std::make_unique<VariantCache>();
 }
 
 VCLG::GraphContext::~GraphContext() = default;

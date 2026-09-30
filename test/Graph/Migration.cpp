@@ -17,14 +17,6 @@ namespace {
                "void Process() { state += " + step + "; output = state; }\n";
     }
 
-    VCLG::Parameter* FindParameter(VCLG::SourceNode* node, const std::string& name) {
-        for (VCLG::Parameter* parameter : node->GetParameters())
-            if (parameter->GetDisplayName() == name)
-                return parameter;
-        FAIL("no parameter " << name);
-        return nullptr;
-    }
-
 }
 
 TEST_CASE("A migration plan copies the regions whose key and signature are unchanged", "[Graph][Migration]") {

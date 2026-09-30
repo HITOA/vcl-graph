@@ -44,6 +44,7 @@ add_library(vclg STATIC
     src/Translation/SourceNodeCompilation.cpp
     src/Translation/StorageLowering.cpp
     src/Translation/Translation.cpp
+    src/Translation/VariantCache.cpp
 )
 target_include_directories(vclg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

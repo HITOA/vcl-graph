@@ -1,9 +1,11 @@
 #pragma once
 
 #include <VCL/Core/Diagnostic.hpp>
+#include <VCL/Core/DiagnosticConsumer.hpp>
 
 #include <cassert>
 #include <string>
+#include <vector>
 
 
 namespace VCLG {
@@ -52,6 +54,30 @@ namespace VCLG {
         std::string path;
         std::string displayName;
         NodeDiagnosticScope* parent;
+    };
+
+    /** A copy of `diagnostic` (VCL's Diagnostic is move-only). */
+    VCL::Diagnostic CopyDiagnostic(VCL::Diagnostic& diagnostic);
+
+    /**
+     * Passes every diagnostic on to `target` and, while recording, keeps a copy: the variant cache
+     * replays what a variant's translation reported at every instance using it (`state-as-data.md`
+     * §7.3).
+     */
+    class DiagnosticRecorder : public VCL::DiagnosticConsumer {
+    public:
+        explicit DiagnosticRecorder(VCL::DiagnosticConsumer* target) : target{ target } {}
+
+        void HandleDiagnostic(VCL::Diagnostic&& diagnostic) override;
+
+        inline void Start() { recording = true; recorded.clear(); }
+        /** Stops recording; returns what was reported since Start. */
+        std::vector<VCL::Diagnostic> Stop();
+
+    private:
+        VCL::DiagnosticConsumer* target;
+        bool recording = false;
+        std::vector<VCL::Diagnostic> recorded{};
     };
 
 }
