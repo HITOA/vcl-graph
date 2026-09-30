@@ -1,6 +1,5 @@
 #include "Common/GraphTest.hpp"
 
-#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -84,9 +83,8 @@ TEST_CASE_METHOD(Test::GraphTest, "Only nodes feeding an output node are emitted
     sink->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
     REQUIRE(Connect(*graph, used->GetOutputs()[0], sink->GetInputs()[0]) != INVALID_IDENTITY);
 
-    mode = GENERATE(Test::Legacy, Test::Planned);
-    // Legacy: the node's variable; planned: its state region's symbol.
-    std::string state = mode == Test::Legacy ? ".state" : "#state";
+    // A node's state is its region's bound symbol.
+    std::string state = "#state";
     REQUIRE(Emit(*graph, [&](llvm::Module& m) {
         REQUIRE(m.getGlobalVariable(NodePath(*graph, used) + state, true) != nullptr);
         REQUIRE(m.getGlobalVariable(NodePath(*graph, unused) + state, true) == nullptr);

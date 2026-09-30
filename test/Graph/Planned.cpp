@@ -1,5 +1,5 @@
 // The planned codegen (plan Phase 4): the slot plan, what each storage class guarantees, and
-// equivalence with the legacy codegen.
+// regression checksums of the graphs it was checked equal to the legacy codegen on.
 
 #include "Common/GraphTest.hpp"
 
@@ -8,8 +8,7 @@
 #include <VCL/AST/ConstantValue.hpp>
 #include <VCL/Core/Target.hpp>
 
-#include <catch2/generators/catch_generators.hpp>
-
+#include <cstdio>
 #include <cstring>
 #include <functional>
 
@@ -26,13 +25,12 @@ namespace {
 
     // Every output of every source node of `graph` after each of `calls` calls to Main (following
     // a Reset), as raw bytes.
-    std::vector<std::vector<uint8_t>> Run(Test::GraphTest& test, VCLG::GraphInstance& graph, Test::Mode mode, int calls, bool resetTwice = false) {
-        test.mode = mode;
+    std::vector<std::vector<uint8_t>> Run(Test::GraphTest& test, VCLG::GraphInstance& graph, int calls, bool resetTwice = false) {
         Test::CompiledGraph compiled = test.Compile(graph);
         VCLG::ElaboratedGraph elaborated = VCLG::Elaborate(graph);
         REQUIRE(elaborated.Succeeded());
 
-        // Sizes from the planned layout (both modes store the same types).
+        // The bytes of each output's type.
         std::vector<std::pair<uint8_t*, uint64_t>> outputs{};
         for (VCLG::ElaboratedGraph::NodeIndex index : elaborated.GetExecutionOrder()) {
             const VCLG::ElaboratedGraph::Node& node = elaborated.GetNode(index);
@@ -60,17 +58,24 @@ namespace {
         return results;
     }
 
-    // The two codegens compute the same outputs, call after call; and in planned mode, a second
-    // Reset starts the same sequence again (Reset runs `__Init`, §5.7).
-    void CheckEquivalent(Test::GraphTest& test, VCLG::GraphInstance& graph, int calls = 8) {
-        std::vector<std::vector<uint8_t>> legacy = Run(test, graph, Test::Legacy, calls);
-        std::vector<std::vector<uint8_t>> planned = Run(test, graph, Test::Planned, calls, true);
-        REQUIRE(planned.size() == 2 * legacy.size());
+    // The outputs of `calls` calls after a Reset hash to `expected` (FNV-1a), and a second Reset
+    // replays them (Reset runs `__Init`, §5.7). The checksums were recorded when the planned
+    // codegen was checked equal, call by call, to the legacy one (plan P4.3), before P4.8
+    // removed it; on x86-64, vector width 8.
+    void CheckRecorded(Test::GraphTest& test, VCLG::GraphInstance& graph, uint64_t expected, int calls = 8) {
+        std::vector<std::vector<uint8_t>> runs = Run(test, graph, calls, true);
+        REQUIRE(runs.size() == 2 * (size_t)calls);
+        uint64_t checksum = 1469598103934665603ull;
         for (int call = 0; call < calls; ++call) {
             INFO("call " << call);
-            REQUIRE(planned[call] == legacy[call]);
-            REQUIRE(planned[calls + call] == planned[call]);
+            REQUIRE(runs[calls + call] == runs[call]);
+            for (uint8_t byte : runs[call])
+                checksum = (checksum ^ byte) * 1099511628211ull;
         }
+        char text[32];
+        std::snprintf(text, sizeof(text), "0x%016llx", (unsigned long long)checksum);
+        INFO("checksum " << text);
+        REQUIRE(checksum == expected);
     }
 
     class IntToFloatConverter : public VCLG::Converter {
@@ -151,7 +156,6 @@ TEST_CASE_METHOD(Test::GraphTest, "The plan of a small graph", "[Graph][Plan]") 
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "One producer feeding two inputs of one node", "[Graph][Plan]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // Both inputs of the Add get the same pointer: `noalias` holds, since neither is written
     // during the call (§4.6, invariant 3).
     auto graph = context.CreateInstance();
@@ -162,7 +166,6 @@ TEST_CASE_METHOD(Test::GraphTest, "One producer feeding two inputs of one node",
     REQUIRE(Connect(*graph, counter->GetOutputs()[0], add->GetInputs()[1]) != INVALID_IDENTITY);
 
     VCLG::CodeGenGraphOptions options = Observing(*this, { VCLG::GraphLayout::OutputKey(NodePath(*graph, add), "output") });
-    options.mode = mode;
     Test::CompiledGraph compiled = Compile(*graph, options, true);
     compiled.Reset();   // Counter starts at 10
     compiled.Main();
@@ -170,7 +173,6 @@ TEST_CASE_METHOD(Test::GraphTest, "One producer feeding two inputs of one node",
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "An output written on some calls keeps its value", "[Graph][Plan]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     auto graph = context.CreateInstance();
     auto* node = AddNode(*graph, "Planned/EveryOtherCall");
     auto* pass = AddNode(*graph, "Passthrough");
@@ -181,7 +183,6 @@ TEST_CASE_METHOD(Test::GraphTest, "An output written on some calls keeps its val
     REQUIRE(Plan(*graph, Observing(*this, { passOutput })).find("S3 host port float32 " + NodePath(*graph, node) + ".output") != std::string::npos);
 
     VCLG::CodeGenGraphOptions options = Observing(*this, { passOutput });
-    options.mode = mode;
     Test::CompiledGraph compiled = Compile(*graph, options, true);
     compiled.Reset();
     float expected[] = { 0.0f, 0.0f, 2.0f, 2.0f, 4.0f, 4.0f };
@@ -267,8 +268,8 @@ TEST_CASE_METHOD(Test::GraphTest, "A broken [AlwaysWritten] promise", "[Graph][P
 
 TEST_CASE_METHOD(Test::GraphTest, "A side branch of a feedback loop reads the previous value", "[Graph][Feedback]") {
     // body = previous body + 1; sink = previous body + body. The sink depends on the body, so it
-    // always runs after it: legacy mode gave it this call's value (no delay), planned mode the
-    // previous one, like every other reader (§5.6, the one intended change of behaviour).
+    // always runs after it: the legacy codegen gave it this call's value (no delay); it now reads
+    // the previous one, like every other reader (§5.6, the one intended change of behaviour).
     auto graph = context.CreateInstance();
     auto* loopIn = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
     auto* loopOut = graph->InstantiateBuiltinNode<VCLG::FeedbackOutputNode>();
@@ -290,20 +291,15 @@ TEST_CASE_METHOD(Test::GraphTest, "A side branch of a feedback loop reads the pr
     REQUIRE(plan.find("S4 temporary float32 " + NodePath(*graph, body) + ".output: calls 1..4") != std::string::npos);
     REQUIRE(plan.find("S5 feedback float32 " + NodePath(*graph, loopIn) + "#feedback") != std::string::npos);
 
-    for (Test::Mode compiledMode : { Test::Legacy, Test::Planned }) {
-        VCLG::CodeGenGraphOptions options = Observing(*this, { sinkOutput });
-        options.mode = compiledMode;
-        Test::CompiledGraph compiled = Compile(*graph, options, true);
-        compiled.Reset();
-        for (int call = 1; call <= 3; ++call) {
-            compiled.Main();
-            float value = *compiled.Output<float>(NodePath(*graph, sink), "output");
-            REQUIRE(value == (compiledMode == Test::Legacy ? 2.0f * call : 2.0f * call - 1.0f));
-        }
+    Test::CompiledGraph compiled = Compile(*graph, Observing(*this, { sinkOutput }), true);
+    compiled.Reset();
+    for (int call = 1; call <= 3; ++call) {
+        compiled.Main();
+        REQUIRE(*compiled.Output<float>(NodePath(*graph, sink), "output") == 2.0f * call - 1.0f);
     }
 }
 
-TEST_CASE_METHOD(Test::GraphTest, "The planned codegen computes what the legacy one does", "[Graph][Equivalence]") {
+TEST_CASE_METHOD(Test::GraphTest, "Recorded outputs of small graphs", "[Graph][Regression]") {
     SECTION("a chain with state, a parameter and a templated node") {
         auto graph = context.CreateInstance();
         auto* counter = AddNode(*graph, "Counter");
@@ -312,7 +308,7 @@ TEST_CASE_METHOD(Test::GraphTest, "The planned codegen computes what the legacy 
         pass->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
         REQUIRE(Connect(*graph, counter->GetOutputs()[0], scale->GetInputs()[0]) != INVALID_IDENTITY);
         REQUIRE(Connect(*graph, scale->GetOutputs()[0], pass->GetInputs()[0]) != INVALID_IDENTITY);
-        CheckEquivalent(*this, *graph);
+        CheckRecorded(*this, *graph, 0xb008c168dd51370bull);
     }
     SECTION("aggregates: blocks, arrays, a library struct") {
         auto graph = context.CreateInstance();
@@ -328,7 +324,7 @@ TEST_CASE_METHOD(Test::GraphTest, "The planned codegen computes what the legacy 
         REQUIRE(Connect(*graph, source->GetOutputs()[0], gain->GetInputs()[0]) != INVALID_IDENTITY);
         REQUIRE(Connect(*graph, gain->GetOutputs()[0], gain2->GetInputs()[0]) != INVALID_IDENTITY);
         REQUIRE(Connect(*graph, array->GetOutputs()[0], arrayPass->GetInputs()[0]) != INVALID_IDENTITY);
-        CheckEquivalent(*this, *graph);
+        CheckRecorded(*this, *graph, 0xf7bf0bd0a83e7483ull);
     }
     SECTION("a subgraph used twice") {
         auto sub = context.CreateInstance();
@@ -343,7 +339,7 @@ TEST_CASE_METHOD(Test::GraphTest, "The planned codegen computes what the legacy 
             sink->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
             REQUIRE(root->Connect(use->GetOutputs()[0], sink->GetInputs()[0]) != INVALID_IDENTITY);
         }
-        CheckEquivalent(*this, *root);
+        CheckRecorded(*this, *root, 0x9d7abe17f12dbf23ull);
     }
     SECTION("a converted input") {
         IntToFloatConverter converter{};
@@ -353,7 +349,7 @@ TEST_CASE_METHOD(Test::GraphTest, "The planned codegen computes what the legacy 
         auto* scale = AddNode(*graph, "Scale");
         scale->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
         REQUIRE(Connect(*graph, source->GetOutputs()[0], scale->GetInputs()[0]) != INVALID_IDENTITY);
-        CheckEquivalent(*this, *graph);
+        CheckRecorded(*this, *graph, 0x0f4d4d0eb3985603ull);
     }
     SECTION("a feedback loop without side branches") {
         auto graph = context.CreateInstance();
@@ -368,7 +364,7 @@ TEST_CASE_METHOD(Test::GraphTest, "The planned codegen computes what the legacy 
         REQUIRE(Connect(*graph, loopOut->GetOutputs()[0], body->GetInputs()[0]) != INVALID_IDENTITY);
         REQUIRE(Connect(*graph, body->GetOutputs()[0], scale->GetInputs()[0]) != INVALID_IDENTITY);
         REQUIRE(Connect(*graph, scale->GetOutputs()[0], loopIn->GetInputs()[0]) != INVALID_IDENTITY);
-        CheckEquivalent(*this, *graph);
+        CheckRecorded(*this, *graph, 0x94ef98bd5aef74e3ull);
     }
     SECTION("an output that persists") {
         auto graph = context.CreateInstance();
@@ -376,6 +372,6 @@ TEST_CASE_METHOD(Test::GraphTest, "The planned codegen computes what the legacy 
         auto* pass = AddNode(*graph, "Passthrough");
         pass->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
         REQUIRE(Connect(*graph, node->GetOutputs()[0], pass->GetInputs()[0]) != INVALID_IDENTITY);
-        CheckEquivalent(*this, *graph);
+        CheckRecorded(*this, *graph, 0x081f104682159983ull);
     }
 }

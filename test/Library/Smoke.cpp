@@ -1,25 +1,24 @@
 // Library smoke test: compiles and runs every node of a real node library, one node per graph,
 // with the pipeline Grog uses (CodeGenGraph::Emit, VCLG::Optimizer, VCL::ExecutionSession, the host
-// symbols of Grog's ExecutionContext). Each node is compiled and run twice from scratch (Reset, then
-// 64 calls to Main), and the two runs must hash its outputs (and the host's audio output, when
-// the node imports it) to the same value.
+// symbols of Grog's ExecutionContext, the state block bound as its layout says). Every output is
+// observed (a host port). Each node is compiled and run twice from scratch (Reset, then 64 calls to
+// Main), and the two runs must hash its outputs (and the host's audio output, when the node imports
+// it) to the same value; within each, a second Reset then the same 64 calls must give the same
+// outputs again (Reset runs `__Init`).
 //
 // Each node is also translated on its own (A2 Phase 3: `VCLG::TranslateSourceNode`); the output
 // file's fifth column lists its outputs as `<name>:<proven|promised|held>` (always written as
 // LLVM proves, as the author promises with [AlwaysWritten], or neither: the output persists).
 //
-// Each node is also compiled with the planned codegen (A2 Phase 4), observing every output as a
-// host port: its checksum must equal the legacy one, and Reset then the same 64 calls must give the
-// same outputs a second time in the same session (Reset runs `__Init`). The checksum column is the
-// legacy one (so the references stay comparable); the status says `planned-mismatch` or
-// `planned-reset` when the planned run disagrees. A few nodes round differently in planned code
-// (fast-math): their outputs must be within a recorded tolerance instead (PlannedTolerance).
+// Until plan P4.8 the legacy codegen ran too, and the planned one had to match it (bit for bit,
+// or within 1e-5 for the 11 IIR filters that round differently): the reference checksums of
+// `research/state-storage/results/2026-09-30-smoke-p4-final-vclg-db886f2-dirty.tsv` come from
+// the planned codegen once it did.
 //
 // Enabled when GROG_RESOURCES points at a Grog resources directory (holding `Nodes/` and
 // `Libraries/`), skipped otherwise. Two more variables are optional:
 //   - GROG_SMOKE_OUT: writes one line per node to this file:
-//     `<node>\t<status>\t<checksum>\t<compile + JIT time, ms>\t<outputs>\t<planned compile + JIT
-//     time, ms>\t<planned outputs: exact, or their largest difference from legacy's>`;
+//     `<node>\t<status>\t<checksum>\t<compile + JIT time, ms>\t<outputs>`;
 //   - GROG_SMOKE_REFERENCE: a file written by GROG_SMOKE_OUT with another build; each node's status
 //     and checksum must match it (equivalence of two codegens, on one machine).
 //   - GROG_SMOKE_DUMP: a directory; the first run of each node writes the bytes it hashes to
@@ -38,13 +37,10 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cmath>
-#include <limits>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <map>
 #include <sstream>
 
@@ -177,43 +173,8 @@ namespace {
         std::string status{};
         uint64_t checksum = 0;
         double compileMs = 0.0;
-        double plannedCompileMs = 0.0;
         std::string outputs{};
-        /** "exact", or the largest difference between the planned and legacy outputs. */
-        std::string planned{ "exact" };
     };
-
-    // Nodes whose planned code rounds differently from legacy code: the largest difference allowed
-    // between their outputs, in MaxDifference's terms. The IIR filters read their coefficients (an
-    // output set by [NodeReset]) through a noalias pointer instead of a global, and LLVM vectorizes
-    // and contracts the biquad differently under fast-math: one to three ulps (2026-09-30: at most
-    // 3.6e-7); the tolerance leaves a margin of about 30.
-    const std::map<std::string, double> PlannedTolerance = {
-        { "Filter/EQ/All-Pass", 1e-5 }, { "Filter/EQ/Band", 1e-5 }, { "Filter/EQ/Band-Pass", 1e-5 },
-        { "Filter/EQ/High-Pass", 1e-5 }, { "Filter/EQ/High-Shelf", 1e-5 }, { "Filter/EQ/Low-Pass", 1e-5 },
-        { "Filter/EQ/Low-Shelf", 1e-5 }, { "Filter/EQ/Notch", 1e-5 }, { "Filter/EQ/Peaking", 1e-5 },
-        { "Filter/EQ/Resonator", 1e-5 }, { "Filter/Modulated/High-Pass", 1e-5 },
-    };
-
-    // The largest difference between two runs' outputs, read as float32 words (what the tolerated
-    // nodes output): |a - b| / max(|a|, |b|, 1), so relative above 1 and absolute below. A size
-    // mismatch, or words that differ and aren't both finite, count as infinitely different.
-    double MaxDifference(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
-        if (a.size() != b.size() || a.size() % 4 != 0)
-            return std::numeric_limits<double>::infinity();
-        double largest = 0.0;
-        for (size_t i = 0; i < a.size(); i += 4) {
-            float x = 0.0f, y = 0.0f;
-            std::memcpy(&x, a.data() + i, 4);
-            std::memcpy(&y, b.data() + i, 4);
-            if (std::memcmp(&x, &y, 4) == 0)
-                continue;
-            if (!std::isfinite(x) || !std::isfinite(y))
-                return std::numeric_limits<double>::infinity();
-            largest = std::max(largest, std::abs((double)x - (double)y) / std::max({ std::abs((double)x), std::abs((double)y), 1.0 }));
-        }
-        return largest;
-    }
 
     std::map<std::string, std::string> ReadReference(const char* path) {
         std::map<std::string, std::string> reference{};
@@ -303,21 +264,17 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
                 graph->Connect(audioInput->GetOutputs()[0], input);
         }
 
-        // Compiles and runs the graph in a new session: Reset, then CallsPerRun calls to Main,
-        // hashing the outputs after each call. Returns the status.
         VCLG::SourceNodeDefinition* definition = context.GetDefinitionRegistry().GetOrCreateSourceNodeDefinition(source);
         // Compiles and runs the graph in a new session: Reset, then CallsPerRun calls to Main,
         // hashing the outputs after each call (`runs` times, each after a Reset). Returns the
-        // status. Planned mode observes every output (host ports), as the checksums need.
-        auto compileAndRun = [&](Test::Mode mode, std::vector<uint64_t>& checksums, uint32_t runs, double& compileMs,
-                std::ostream* dump, std::vector<uint8_t>* samples) -> std::string {
+        // status.
+        auto compileAndRun = [&](std::vector<uint64_t>& checksums, uint32_t runs, double& compileMs, std::ostream* dump) -> std::string {
             llvm::orc::ThreadSafeModule module{
                 cc.GetLLVMContext().withContextDo([](llvm::LLVMContext* c) {
                     return std::make_unique<llvm::Module>("smoke", *c);
                 }),
                 cc.GetLLVMContext() };
             VCLG::CodeGenGraphOptions options{};
-            options.mode = mode;
             options.planner.observeAllOutputs = true;
             std::vector<std::pair<std::string, uint64_t>> outputs{};
             VCLG::GraphLayout layout{};
@@ -332,9 +289,9 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
                     const VCLG::SourcePortDefinition& port = definition->GetPorts()[i];
                     if (port.IsInput())
                         continue;
-                    if (mode == Test::Planned) {
-                        // A host port: a region of the state block.
-                        // The bytes hashed are those of the output's type, as in legacy mode.
+                    // A host port: a region of the state block. The bytes hashed are those of
+                    // the output's type.
+                    {
                         std::string path = Test::GraphTest::NodePath(*graph, node);
                         std::string key = VCLG::GraphLayout::OutputKey(path, port.GetName());
                         const VCLG::ElaboratedGraph::Node* elaboratedNode = nullptr;
@@ -348,17 +305,7 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
                         if (type == nullptr)
                             return false;
                         outputs.emplace_back(key, m.getDataLayout().getTypeStoreSize(type));
-                        continue;
                     }
-                    // Port variables are internal, so the optimizer would fold the outputs away:
-                    // they are made external, as observing an output requires.
-                    std::string symbol = Test::GraphTest::NodeSymbol(*graph, node, port.GetName());
-                    llvm::GlobalVariable* global = m.getGlobalVariable(symbol, true);
-                    if (global == nullptr)
-                        return false;
-                    global->setLinkage(llvm::GlobalValue::ExternalLinkage);
-                    global->setDSOLocal(false);
-                    outputs.emplace_back(symbol, m.getDataLayout().getTypeStoreSize(global->getValueType()));
                 }
                 if (!optimizer.Optimize(cgg))
                     return false;
@@ -368,33 +315,25 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
                 return true;
             });
             if (!compiled)
-                return mode == Test::Planned ? "planned-compile" : "compile";
+                return "compile";
 
             Host host{ vectorWidth };
             VCL::ExecutionSession session{};
             if (!session.SubmitModule(std::move(module)))
                 return "jit";
             host.Bind(session);
-            Test::HostBlock state{}, ui{};
-            if (mode == Test::Planned) {
-                state = Test::HostBlock{ layout.state.size, layout.state.alignment };
-                ui = Test::HostBlock{ layout.ui.size, layout.ui.alignment };
-                for (const VCLG::GraphLayout::Region& region : layout.regions)
-                    session.DefineSymbolPtr(region.symbol, state.Bytes() + region.offset);
-            }
+            Test::HostBlock state{ layout.state.size, layout.state.alignment };
+            Test::HostBlock ui{ layout.ui.size, layout.ui.alignment };
+            for (const VCLG::GraphLayout::Region& region : layout.regions)
+                session.DefineSymbolPtr(region.symbol, state.Bytes() + region.offset);
             void* main = session.Lookup("Main");
             void* reset = session.Lookup("Reset");
             if (main == nullptr || reset == nullptr)
                 return "link";
-            auto call = [&](void* function) {
-                if (mode == Test::Planned)
-                    ((void (*)(const void*))function)(ui.data);
-                else
-                    ((void (*)())function)();
-            };
+            auto call = [&](void* function) { ((void (*)(const void*))function)(ui.data); };
             std::vector<std::pair<const uint8_t*, uint64_t>> outputData{};
             for (const auto& [symbol, size] : outputs) {
-                const VCLG::GraphLayout::Region* region = mode == Test::Planned ? layout.FindRegion(symbol) : nullptr;
+                const VCLG::GraphLayout::Region* region = layout.FindRegion(symbol);
                 void* address = region != nullptr ? state.Bytes() + region->offset : session.Lookup(symbol);
                 if (address == nullptr) {
                     consumer.errors.push_back("no symbol " + symbol);
@@ -415,8 +354,6 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
                         sum.Add(address, size);
                         if (dump && run == 0)
                             dump->write((const char*)address, (std::streamsize)size);
-                        if (samples && run == 0)
-                            samples->insert(samples->end(), address, address + size);
                     }
                 }
                 checksums.push_back(sum.value);
@@ -424,7 +361,8 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
             return "ok";
         };
 
-        // Legacy, twice from scratch: the result must not depend on anything but the graph.
+        // Twice from scratch: the result must not depend on anything but the graph. Within each,
+        // a second Reset replays the same outputs.
         std::vector<uint64_t> checksums{};
         std::unique_ptr<std::ofstream> dump{};
         if (const char* dumpDirectory = std::getenv("GROG_SMOKE_DUMP")) {
@@ -433,41 +371,15 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
             dump = std::make_unique<std::ofstream>(std::filesystem::path{ dumpDirectory } / (fileName + ".bin"),
                 std::ios::binary | std::ios::trunc);
         }
-        std::vector<uint8_t> legacySamples{};
-        std::string status = compileAndRun(Test::Legacy, checksums, 1, result.compileMs, dump.get(), &legacySamples);
+        std::string status = compileAndRun(checksums, 2, result.compileMs, dump.get());
         double ignored = 0.0;
         if (status == "ok")
-            status = compileAndRun(Test::Legacy, checksums, 1, ignored, nullptr, nullptr);
-        if (status == "ok" && checksums[0] != checksums[1])
+            status = compileAndRun(checksums, 2, ignored, nullptr);
+        if (status == "ok" && (checksums[0] != checksums[1] || checksums[2] != checksums[3]))
+            status = "reset";
+        else if (status == "ok" && checksums[0] != checksums[2])
             status = "nondeterministic";
         result.checksum = checksums.empty() ? 0 : checksums[0];
-
-        // Planned: the same outputs as legacy, and a second Reset replays them (Reset runs
-        // `__Init`, §5.7). The dump, when asked for, holds the planned outputs.
-        if (status == "ok") {
-            std::vector<uint64_t> planned{};
-            std::unique_ptr<std::ofstream> plannedDump{};
-            if (const char* dumpDirectory = std::getenv("GROG_SMOKE_DUMP")) {
-                std::string fileName = name;
-                std::replace(fileName.begin(), fileName.end(), '/', '_');
-                plannedDump = std::make_unique<std::ofstream>(std::filesystem::path{ dumpDirectory } / (fileName + ".planned.bin"),
-                    std::ios::binary | std::ios::trunc);
-            }
-            std::vector<uint8_t> plannedSamples{};
-            status = compileAndRun(Test::Planned, planned, 2, result.plannedCompileMs, plannedDump.get(), &plannedSamples);
-            if (status == "ok" && planned[0] != planned[1]) {
-                status = "planned-reset";
-            } else if (status == "ok" && planned[0] != result.checksum) {
-                // Within the node's recorded tolerance, if it has one.
-                auto tolerance = PlannedTolerance.find(name);
-                std::ostringstream difference{};
-                difference << std::scientific << std::setprecision(2) << MaxDifference(legacySamples, plannedSamples);
-                result.planned = difference.str();
-                if (tolerance == PlannedTolerance.end() || MaxDifference(legacySamples, plannedSamples) > tolerance->second)
-                    status = "planned-mismatch";
-                UNSCOPED_INFO(name << ": planned outputs differ from legacy by " << result.planned);
-            }
-        }
 
         // Examples of the planner's decisions on real nodes, nothing observed (plan P4.2): Gain's
         // output is always written, a temporary; Mono MIDI Note's gate must persist, a host port.
@@ -535,8 +447,7 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
         std::ofstream file{ out, std::ios::trunc };
         for (const auto& [name, result] : results)
             file << name << '\t' << result.status << '\t' << std::hex << result.checksum << std::dec << '\t'
-                 << (int64_t)result.compileMs << '\t' << result.outputs << '\t' << (int64_t)result.plannedCompileMs
-                 << '\t' << result.planned << '\n';
+                 << (int64_t)result.compileMs << '\t' << result.outputs << '\n';
     }
 
     if (const char* referencePath = std::getenv("GROG_SMOKE_REFERENCE")) {

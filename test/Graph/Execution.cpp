@@ -2,13 +2,9 @@
 
 #include <VCL/AST/ConstantValue.hpp>
 
-#include <catch2/generators/catch_generators.hpp>
 
-
-// Every test runs in both codegen modes (plan Phase 4).
 
 TEST_CASE_METHOD(Test::GraphTest, "Values flow through connections", "[Graph][Execution]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     auto graph = context.CreateInstance();
     auto* first = AddNode(*graph, "Add");
     auto* second = AddNode(*graph, "Add");
@@ -29,7 +25,6 @@ TEST_CASE_METHOD(Test::GraphTest, "Values flow through connections", "[Graph][Ex
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Parameters are compiled in", "[Graph][Execution]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     auto graph = context.CreateInstance();
     auto* scale = AddNode(*graph, "Scale");
     scale->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
@@ -45,15 +40,13 @@ TEST_CASE_METHOD(Test::GraphTest, "Parameters are compiled in", "[Graph][Executi
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Reset runs the nodes' [NodeReset]", "[Graph][Execution]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     auto graph = context.CreateInstance();
     auto* counter = AddNode(*graph, "Counter");
     counter->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
 
     Test::CompiledGraph compiled = Compile(*graph);
     float* output = compiled.Output<float>(NodePath(*graph, counter), "output");
-    // Before any Reset, the legacy globals hold their initializers; the planned state block is
-    // zeroed by the host: the same values.
+    // Before any Reset, the state block is as the host allocated it: zeros.
     compiled.Main();
     compiled.Main();
     REQUIRE(*output == 2.0f);
@@ -63,7 +56,6 @@ TEST_CASE_METHOD(Test::GraphTest, "Reset runs the nodes' [NodeReset]", "[Graph][
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "A feedback loop sees the previous run's value", "[Graph][Execution]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // out = previous out + 1
     auto graph = context.CreateInstance();
     auto* loopIn = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
@@ -88,7 +80,6 @@ TEST_CASE_METHOD(Test::GraphTest, "A feedback loop sees the previous run's value
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "A feedback loop of a type inferred from AutoParameters", "[Graph][Execution]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // StereoSource -> BlockGain -> Feedback Input; Feedback Output -> BlockGain (output). The loop's
     // type, Block<float32, 2>, exists only as the elaborated type of the first BlockGain's output.
     auto graph = context.CreateInstance();
@@ -111,9 +102,8 @@ TEST_CASE_METHOD(Test::GraphTest, "A feedback loop of a type inferred from AutoP
     sink->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
     REQUIRE(Connect(*graph, loopOut->GetOutputs()[0], sink->GetInputs()[0]) != INVALID_IDENTITY);
 
-    // The sink is a side branch of the loop: in legacy mode, whether it reads this call's value or
-    // the previous one depends on the execution order (plan P4.4), so only the steady state is
-    // checked here (Feedback.cpp checks the planned mode's one call of delay).
+    // The sink is a side branch of the loop; the steady state is checked here (Planned.cpp checks
+    // that a side branch reads the previous value).
     Test::CompiledGraph compiled = Compile(*graph);
     float* output = compiled.Output<float>(NodePath(*graph, sink), "output");
     compiled.Reset();

@@ -2,7 +2,6 @@
 
 #include <VCL/AST/ConstantValue.hpp>
 
-#include <catch2/generators/catch_generators.hpp>
 
 
 // A subgraph containing one Counter, exposed through a Subgraph Output.
@@ -34,7 +33,6 @@ static std::vector<float> CounterStates(Test::GraphTest& test, VCLG::GraphInstan
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Each use of a subgraph has its own state", "[Graph][Subgraph]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // The same subgraph used twice is compiled twice, under two different graph paths.
     auto sub = MakeCounterSubgraph(*this);
     auto root = context.CreateInstance();
@@ -47,7 +45,6 @@ TEST_CASE_METHOD(Test::GraphTest, "Each use of a subgraph has its own state", "[
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Nested uses of a subgraph have their own state", "[Graph][Subgraph]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // `middle` uses the counter subgraph twice (summed); the root uses `middle` twice: 4 counters.
     auto counter = MakeCounterSubgraph(*this);
     auto middle = context.CreateInstance();
@@ -71,7 +68,6 @@ TEST_CASE_METHOD(Test::GraphTest, "Nested uses of a subgraph have their own stat
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Values flow into and out of a subgraph", "[Graph][Subgraph]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // sub: in -> Add(+1) -> out.  root: 5 -> sub -> sink
     auto sub = context.CreateInstance();
     VCL::Type* float32 = context.GetGlobalASTContext().GetTypeCache().GetOrCreateBuiltinType(VCL::BuiltinType::Float32);

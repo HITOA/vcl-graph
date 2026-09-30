@@ -1,10 +1,8 @@
 #include "Common/GraphTest.hpp"
 
-#include <catch2/generators/catch_generators.hpp>
 
 
 TEST_CASE_METHOD(Test::GraphTest, "An error names the node it comes from", "[Graph][Diagnostics]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // A Feedback Input that no Feedback Output reads used to fail the compile without a message.
     auto graph = context.CreateInstance();
     auto* loopIn = graph->InstantiateBuiltinNode<VCLG::FeedbackInputNode>();
@@ -17,7 +15,6 @@ TEST_CASE_METHOD(Test::GraphTest, "An error names the node it comes from", "[Gra
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "An error inside a subgraph names the use and the inner node", "[Graph][Diagnostics]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     auto sub = context.CreateInstance();
     auto* out = sub->InstantiateBuiltinNode<VCLG::SubgraphOutputNode>();
 

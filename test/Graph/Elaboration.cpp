@@ -1,6 +1,5 @@
 #include "Common/GraphTest.hpp"
 
-#include <catch2/generators/catch_generators.hpp>
 
 #include <VCLG/Graph/Converter.hpp>
 
@@ -57,7 +56,6 @@ namespace {
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Each use of a subgraph gets its own types", "[Graph][Elaboration]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     AdoptingConverter converter{};
     context.AddConverter(&converter);
 

@@ -25,7 +25,6 @@ add_library(vclg STATIC
     src/AST/ASTInputConstWriter.cpp
     src/AST/ASTParameterWriter.cpp
     src/AST/ASTPortTypeOverrideWriter.cpp
-    src/CodeGen/CodeGenEntrypoint.cpp
     src/CodeGen/CodeGenFrame.cpp
     src/CodeGen/CodeGenGraph.cpp
     src/CodeGen/Optimizer.cpp

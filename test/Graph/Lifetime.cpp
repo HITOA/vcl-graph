@@ -1,10 +1,8 @@
 #include "Common/GraphTest.hpp"
 
-#include <catch2/generators/catch_generators.hpp>
 
 
 TEST_CASE_METHOD(Test::GraphTest, "Recompiling with a cached library", "[Graph][Lifetime][Regression]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // Like Grog: every compile creates new node ASTs while the imported library stays cached.
     // StructUser instantiates a library template with its own struct; that instantiation must not
     // stay attached to the library after the node's AST is gone (vcl-review.md T3).
@@ -21,7 +19,6 @@ TEST_CASE_METHOD(Test::GraphTest, "Recompiling with a cached library", "[Graph][
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Many graphs in one context", "[Graph][Lifetime]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // Builds, compiles and destroys graphs repeatedly; with VCLG_SANITIZE this catches leaks and
     // use-after-free in definitions, ports and type caches.
     for (int i = 0; i < 20; ++i) {

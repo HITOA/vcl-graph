@@ -1,6 +1,5 @@
 #include "Common/GraphTest.hpp"
 
-#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 
@@ -19,7 +18,6 @@ static std::vector<std::string> Symbols(Test::GraphTest& test, VCLG::GraphInstan
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Symbol names are the same on every compile", "[Graph][Mangling]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     auto graph = context.CreateInstance();
     auto* a = AddNode(*graph, "Counter");
     auto* b = AddNode(*graph, "Scale");
@@ -30,7 +28,6 @@ TEST_CASE_METHOD(Test::GraphTest, "Symbol names are the same on every compile", 
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "Symbols are named after the node's path", "[Graph][Mangling]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     auto graph = context.CreateInstance();
     auto* first = AddNode(*graph, "Counter");
     auto* second = AddNode(*graph, "Counter");
@@ -39,9 +36,9 @@ TEST_CASE_METHOD(Test::GraphTest, "Symbols are named after the node's path", "[G
 
     std::vector<std::string> names = Symbols(*this, *graph);
     auto has = [&](const std::string& name) { return std::find(names.begin(), names.end(), name) != names.end(); };
-    // Two instances of the same node: two separate states and two separate functions. In planned
-    // mode, a node's state is its region's bound symbol.
-    std::string state = mode == Test::Legacy ? ".state" : "#state";
+    // Two instances of the same node: two separate states (their regions' bound symbols) and two
+    // separate functions.
+    std::string state = "#state";
     REQUIRE(has(NodePath(*graph, first) + state));
     REQUIRE(has(NodePath(*graph, second) + state));
     REQUIRE(has(NodeSymbol(*graph, first, "Process")));

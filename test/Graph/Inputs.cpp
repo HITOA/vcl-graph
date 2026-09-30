@@ -5,7 +5,6 @@
 
 #include <VCL/Core/Target.hpp>
 
-#include <catch2/generators/catch_generators.hpp>
 
 
 // Inputs are read-only (ASTInputConstWriter): a node that writes one is rejected when it's loaded.
@@ -52,7 +51,6 @@ TEST_CASE_METHOD(Test::GraphTest, "Passing an input to an inout parameter is an 
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "An input can be read and passed to a default parameter", "[Graph][Inputs]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
     // Unconnected, the input holds its declared (aggregate) initializer.
     auto graph = context.CreateInstance();
     auto* sum = AddNode(*graph, "ArraySum");
@@ -65,10 +63,8 @@ TEST_CASE_METHOD(Test::GraphTest, "An input can be read and passed to a default 
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "A converter writes a const input, optimized", "[Graph][Inputs]") {
-    mode = GENERATE(Test::Legacy, Test::Planned);
-    // Legacy: the input is const for the node only; if its global were an LLVM constant, the
-    // optimizer could fold the node's read of it to the initializer (0) and drop the converter's
-    // store. Planned: the converter writes a temporary the node reads.
+    // The converter writes a temporary the node reads right after; the optimizer must keep the
+    // store (it used to be able to fold a const input global to its initializer).
     IntToFloatConverter converter{};
     context.AddConverter(&converter);
 
