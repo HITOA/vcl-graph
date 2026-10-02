@@ -202,5 +202,55 @@ bool VCLG::CheckNodeRules(const NodeModel& model, VCL::DiagnosticReporter& repor
                 decl->GetSourceRange());
     }
 
+    // [Expose] (§3.4, §3.6): once per variable, with the accesses `Read` and `Write`, on node storage
+    // the UI can reach at run time; a node's outputs are its own to write.
+    for (auto it = tu->Begin(); it != tu->End(); ++it) {
+        VCL::Decl* decl = it.Get();
+        uint32_t count = 0;
+        for (VCL::AttributeInstance* attribute = decl->GetAttribute(); attribute != nullptr; attribute = attribute->GetNextAttribute()) {
+            if (attribute->GetDefinition() != attributes.expose)
+                continue;
+            if (++count == 2)
+                error("[Expose] is given twice; one attribute states the whole access ([Expose(Read, Write)])", attribute->GetSourceRange());
+            bool seen[2] = { false, false };
+            for (VCL::ConstantValue* arg : attribute->GetArgs()) {
+                llvm::StringRef access{};
+                if (arg->GetConstantValueClass() == VCL::ConstantValue::ConstantIdentifierClass)
+                    access = ((VCL::ConstantIdentifier*)arg)->GetIdentifierInfo()->GetName();
+                int index = access == "Read" ? 0 : access == "Write" ? 1 : -1;
+                if (index < 0) {
+                    error("unknown access in [Expose]: expected Read or Write", attribute->GetSourceRange());
+                } else if (seen[index]) {
+                    error("access '" + access.str() + "' is given twice in [Expose]", attribute->GetSourceRange());
+                }
+                if (index >= 0)
+                    seen[index] = true;
+            }
+        }
+        if (count == 0)
+            continue;
+        if (decl->GetDeclClass() != VCL::Decl::VarDeclClass) {
+            error("[Expose] only applies to a variable", decl->GetSourceRange());
+            continue;
+        }
+        std::string name = Name((VCL::VarDecl*)decl);
+        switch (*model.GetVarKind(decl)) {
+            case NodeModel::VarKind::Input:
+            case NodeModel::VarKind::State:
+                break;
+            case NodeModel::VarKind::Output:
+                if (model.GetExposure(decl) == Exposure::Write)
+                    error("output '" + name + "' can't be [Expose(Write)]: the node owns its outputs; [Expose] lets the UI read it",
+                        decl->GetSourceRange());
+                break;
+            case NodeModel::VarKind::Host:
+                error("[Expose] can't apply to host variable '" + name + "': it isn't the node's", decl->GetSourceRange());
+                break;
+            default:
+                error("[Expose] can't apply to '" + name + "': a compile-time value has no run-time storage", decl->GetSourceRange());
+                break;
+        }
+    }
+
     return ok;
 }

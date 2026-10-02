@@ -48,7 +48,11 @@ namespace VCLG {
             /** S5: the value a Feedback Input carries to the next call, in the state block. */
             Feedback,
             /** S6: an unconnected input: a constant. */
-            Constant
+            Constant,
+            /** S7: an unconnected input in the live set: a value of the UI block, which the host writes. */
+            UiEntry,
+            /** S8: the copy of an exposed input fed by a temporary, made before the node's call, in the state block. */
+            Probe
         };
 
         struct Slot {
@@ -60,7 +64,7 @@ namespace VCLG {
             /** What the slot holds, for diagnostics and printing (`g1/n3.output`, `g1/n3`, ...). */
             std::string name{};
 
-            /** Host classes: the region in the layout. */
+            /** Host classes (state block): the region in the layout. UI entries: the entry in `layout.uiEntries`. */
             uint32_t region = None;
 
             /**
@@ -74,12 +78,20 @@ namespace VCLG {
             bool isOutput = false;
 
             /**
-             * Constants: the scalar the graph gives the input (splat across vectors and lanes), or
-             * else the variant's constant holding the declared initializer (`defaultValue`, a symbol
-             * of the module), or else zero.
+             * Constants and UI entries (their initial value): the scalar the graph gives the input
+             * (splat across vectors and lanes), or else the variant's constant holding the declared
+             * initializer (`defaultValue`, a symbol of the module), or else zero.
              */
             std::optional<VCL::ConstantScalar> value{};
             std::string defaultValue{};
+            /** Constants of an exposed input: the external symbol the host reads the value through. */
+            std::string symbol{};
+        };
+
+        /** The copy of an input's slot into its probe, before the node's call (§5.5). */
+        struct ProbeCopy {
+            uint32_t from = None;
+            uint32_t to = None;
         };
 
         struct NodeSlots {
@@ -87,6 +99,7 @@ namespace VCLG {
             uint32_t state = None;
             llvm::SmallVector<uint32_t, 4> inputs{};
             llvm::SmallVector<uint32_t, 4> outputs{};
+            llvm::SmallVector<ProbeCopy, 1> probes{};
         };
 
         /** The end-of-frame copy of a feedback edge's value into its region (§5.6). */
@@ -107,8 +120,18 @@ namespace VCLG {
     struct SlotPlannerOptions {
         /** Every output is observed: a host port (the inspection compile of §5.11; tests). */
         bool observeAllOutputs = false;
-        /** Outputs observed by the host, by key (`GraphLayout::OutputKey`). */
+        /** Outputs observed by the host, by key (`GraphLayout::OutputKey`), besides the `[Expose]` ones. */
         std::set<std::string> observedOutputs{};
+        /**
+         * The live set (§6.7): unconnected inputs, by key (`GraphLayout::InputKey`), that are UI
+         * entries (S7) instead of constants, so that the host can change them without a recompile.
+         */
+        std::set<std::string> liveInputs{};
+        /**
+         * Every unconnected `[Expose(Write)]` input is in the live set: the UI edits it without a
+         * recompile, at the cost of its constant folding. A host without tiering (§6.7) uses it.
+         */
+        bool liveEditableInputs = false;
     };
 
     /** Size and ABI alignment of the LLVM type VCL emits for a VCL type, or nullopt. */
@@ -117,13 +140,14 @@ namespace VCLG {
     using NodeInterfaceFunction = llvm::unique_function<const NodeInterface*(ElaboratedGraph::NodeIndex)>;
 
     /**
-     * Plans the slots of the frame running `graph`'s execution order (§5.3). Every host region is
-     * aligned to at least `minimumAlignment` (the vector width in bytes). Returns nullopt with
+     * Plans the slots of the frame running `graph`'s execution order (§5.3), and lists the exposed
+     * variables (§3.4). Every host region is aligned to at least `minimumAlignment` (the vector width
+     * in bytes); `vectorWidth` is the number of elements of a `Vec`. Returns nullopt with
      * `error` set when the graph can't be planned (a mistake in the graph the user can fix);
      * `errorNode` is the node it belongs to.
      */
     std::optional<SlotPlan> PlanSlots(const ElaboratedGraph& graph, FrameKind frame, NodeInterfaceFunction interfaces,
-        TypeLayoutFunction typeLayout, uint64_t minimumAlignment, const SlotPlannerOptions& options,
+        TypeLayoutFunction typeLayout, uint64_t minimumAlignment, uint32_t vectorWidth, const SlotPlannerOptions& options,
         std::string& error, ElaboratedGraph::NodeIndex& errorNode);
 
     /**
@@ -134,7 +158,8 @@ namespace VCLG {
      *   in In: S4 temporary t0 float32 (g1/n1.Value, converted)
      *   out Out: S3 host port g1/n2.output [32, 36)
      * ```
-     * then the layout and the temporaries' lifetimes. Tests compare it with an expected text.
+     * then the layout and the temporaries' lifetimes, the UI block and the exposed variables. Tests
+     * compare it with an expected text.
      */
     std::string PrintPlan(const ElaboratedGraph& graph, const SlotPlan& plan);
 

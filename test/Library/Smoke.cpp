@@ -207,6 +207,10 @@ TEST_CASE("Every node of the Grog library compiles and runs", "[Library][Smoke]"
     VCL::CompilerContext& cc = context.GetCompilerContext();
     cc.GetDirectiveRegistry().CreateDirectiveHandler<VCL::ImportDirective>(cc.GetIdentifierTable().Get("import"), cc,
         (root / "Libraries").string());
+    // Attributes Grog defines for its UI (`Grog::NodeWidgets`): nodes use them, the graph ignores them.
+    VCL::IdentifierTable& identifiers = cc.GetIdentifierTable();
+    cc.GetAttributeTable().AddDefinition(identifiers.Get("Knob"), 2, 4,
+        { identifiers.Get("min"), identifiers.Get("max"), identifiers.Get("unit"), identifiers.Get("scale") });
     const uint32_t vectorWidth = cc.GetTarget().GetVectorWidthInElement();
 
     // Sorted, so that the output file is stable. Empty files are skipped, as Grog does.

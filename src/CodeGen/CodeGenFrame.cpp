@@ -214,7 +214,26 @@ bool VCLG::CodeGenFrame::EmitReset() {
     return true;
 }
 
-llvm::Function* VCLG::CodeGenFrame::CreateFrameFunction(llvm::StringRef name) {
+bool VCLG::CodeGenFrame::EmitInitUI() {
+    llvm::Function* function = CreateFrameFunction("InitUI", true);
+    if (function == nullptr)
+        return false;
+    // Each live input starts from the value it would have as a constant (§6.4 step 5).
+    for (uint32_t i = 0; i < plan.slots.size(); ++i) {
+        const SlotPlan::Slot& slot = plan.slots[i];
+        if (slot.slotClass != SlotPlan::SlotClass::UiEntry)
+            continue;
+        llvm::Value* to = GetSlot(i);
+        llvm::GlobalVariable* from = GetConstant(i);
+        if (to == nullptr || from == nullptr)
+            return false;
+        builder.CreateMemCpy(to, llvm::MaybeAlign{ slot.alignment }, from, from->getAlign(), slot.size);
+    }
+    builder.CreateRetVoid();
+    return true;
+}
+
+llvm::Function* VCLG::CodeGenFrame::CreateFrameFunction(llvm::StringRef name, bool writesUi) {
     if (module.getNamedValue(name) != nullptr) {
         ReportError(ElaboratedGraph::Invalid, "the module already has a symbol `" + name.str() + "`");
         return nullptr;
@@ -229,7 +248,8 @@ llvm::Function* VCLG::CodeGenFrame::CreateFrameFunction(llvm::StringRef name) {
     ui->setName("ui");
     ui->addAttr(llvm::Attribute::NoAlias);
     ui->addAttr(llvm::Attribute::getWithCaptureInfo(context, llvm::CaptureInfo::none()));
-    ui->addAttr(llvm::Attribute::ReadOnly);
+    if (!writesUi)
+        ui->addAttr(llvm::Attribute::ReadOnly);
 
     if (options.inlineNodes) {
         for (const std::optional<TranslatedNode>& node : nodes) {
@@ -258,11 +278,20 @@ llvm::Value* VCLG::CodeGenFrame::GetSlot(uint32_t index) {
         case SlotPlan::SlotClass::HostState:
         case SlotPlan::SlotClass::HostPort:
         case SlotPlan::SlotClass::Feedback:
+        case SlotPlan::SlotClass::Probe:
             address = GetRegion(slot.region);
             break;
         case SlotPlan::SlotClass::Constant:
             address = GetConstant(index);
             break;
+        case SlotPlan::SlotClass::UiEntry: {
+            // `ui + offset`, computed in the entry block, where `ui` is known.
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            llvm::IRBuilder<> entry{ &function->getEntryBlock(), function->getEntryBlock().begin() };
+            address = entry.CreateConstInBoundsGEP1_64(entry.getInt8Ty(), function->getArg(0),
+                plan.layout.uiEntries[slot.region].offset, slot.name);
+            break;
+        }
         case SlotPlan::SlotClass::Temporary: {
             // In the entry block, so that SROA and mem2reg see it.
             llvm::Function* function = builder.GetInsertBlock()->getParent();
@@ -307,7 +336,14 @@ llvm::GlobalVariable* VCLG::CodeGenFrame::GetConstant(uint32_t index) {
     if (!slot.value && !slot.defaultValue.empty()) {
         // The variant's constant holding the input's declared initializer.
         variable = module.getGlobalVariable(slot.defaultValue, true);
-        VCLG_CHECK(cc.GetDiagnosticReporter(), variable != nullptr);
+        if (!VCLG_CHECK(cc.GetDiagnosticReporter(), variable != nullptr))
+            return nullptr;
+        if (!slot.symbol.empty()) {
+            // Exposed: a copy the host can find, still a constant LLVM folds loads from.
+            variable = new llvm::GlobalVariable(module, variable->getValueType(), true, llvm::GlobalValue::ExternalLinkage,
+                variable->getInitializer(), slot.symbol);
+            variable->setAlignment(llvm::Align{ slot.alignment });
+        }
     } else {
         llvm::Type* type = ConvertType(slot.type);
         if (type == nullptr)
@@ -317,9 +353,18 @@ llvm::GlobalVariable* VCLG::CodeGenFrame::GetConstant(uint32_t index) {
             : llvm::Constant::getNullValue(type);
         if (!VCLG_CHECK(cc.GetDiagnosticReporter(), value->getType() == type))
             return nullptr;
-        variable = new llvm::GlobalVariable(module, type, true, llvm::GlobalValue::PrivateLinkage, value, slot.name);
-        variable->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+        if (slot.symbol.empty()) {
+            variable = new llvm::GlobalVariable(module, type, true, llvm::GlobalValue::PrivateLinkage, value, slot.name);
+            variable->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+        } else {
+            variable = new llvm::GlobalVariable(module, type, true, llvm::GlobalValue::ExternalLinkage, value, slot.symbol);
+        }
         variable->setAlignment(llvm::Align{ slot.alignment });
+    }
+    if (!slot.symbol.empty() && variable->getName() != slot.symbol) {
+        variable->eraseFromParent();
+        ReportError(ElaboratedGraph::Invalid, "the module already has a symbol `" + slot.symbol + "`");
+        return nullptr;
     }
     constants[index] = variable;
     return variable;
@@ -376,6 +421,16 @@ bool VCLG::CodeGenFrame::EmitProcessCall(NodeIndex index) {
         if (input.edge && input.edge->converter != nullptr
                 && !EmitConversion(index, *input.edge, ElaboratedGraph::TypeOf(input), GetSlot(slots.inputs[i])))
             return false;
+    }
+
+    // What the node reads, for the host (§5.5).
+    for (const SlotPlan::ProbeCopy& probe : slots.probes) {
+        llvm::Value* from = GetSlot(probe.from);
+        llvm::Value* to = GetSlot(probe.to);
+        if (from == nullptr || to == nullptr)
+            return false;
+        builder.CreateMemCpy(to, llvm::MaybeAlign{ plan.slots[probe.to].alignment }, from, llvm::MaybeAlign{ plan.slots[probe.from].alignment },
+            plan.slots[probe.to].size);
     }
 
     // The slots are distinct objects, a node's outputs never share memory with its inputs, and

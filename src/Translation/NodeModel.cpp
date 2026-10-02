@@ -113,3 +113,14 @@ std::optional<uint32_t> VCLG::NodeModel::GetPortIndex(const VCL::Decl* decl) con
 bool VCLG::NodeModel::IsAlwaysWritten(const VCL::VarDecl* port) const {
     return IsOutput(port) && ((VCL::Decl*)port)->HasAttribute(attributes.alwaysWritten) != nullptr;
 }
+
+VCLG::Exposure VCLG::NodeModel::GetExposure(const VCL::Decl* decl) const {
+    VCL::AttributeInstance* attribute = ((VCL::Decl*)decl)->HasAttribute(attributes.expose);
+    if (attribute == nullptr)
+        return Exposure::None;
+    for (VCL::ConstantValue* arg : attribute->GetArgs())
+        if (arg->GetConstantValueClass() == VCL::ConstantValue::ConstantIdentifierClass
+                && ((VCL::ConstantIdentifier*)arg)->GetIdentifierInfo()->GetName() == "Write")
+            return Exposure::Write;
+    return Exposure::Read;
+}

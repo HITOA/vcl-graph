@@ -21,9 +21,9 @@ namespace VCLG {
     class SourcePortDefinition {
     public:
         SourcePortDefinition(const std::string& name, const std::string& displayName, bool isInput, VCL::VarDecl* decl, bool isDependent,
-                bool isAlwaysWritten = false) :
+                bool isAlwaysWritten = false, Exposure exposure = Exposure::None) :
                 name{ name }, displayName{ displayName }, isInput{ isInput }, decl{ decl }, isDependent{ isDependent },
-                isAlwaysWritten{ isAlwaysWritten } {}
+                isAlwaysWritten{ isAlwaysWritten }, exposure{ exposure } {}
 
         inline const std::string& GetName() const { return name; }
         inline const std::string& GetDisplayName() const { return displayName; }
@@ -32,6 +32,8 @@ namespace VCLG {
         inline bool IsDependent() const { return isDependent; }
         /** The author promises (`[AlwaysWritten]`) that every call of the node writes the whole output before reading it. */
         inline bool IsAlwaysWritten() const { return isAlwaysWritten; }
+        /** What the node's UI may do with the port (`[Expose]`): an output is at most read. */
+        inline Exposure GetExposure() const { return exposure; }
 
     private:
         std::string name;
@@ -40,19 +42,24 @@ namespace VCLG {
         VCL::VarDecl* decl;
         bool isDependent;
         bool isAlwaysWritten;
+        Exposure exposure;
     };
 
     /** A mutable module-level variable that isn't a port: a field of the node's `State` once translated. */
     class SourceStateDefinition {
     public:
-        SourceStateDefinition(const std::string& name, VCL::VarDecl* decl) : name{ name }, decl{ decl } {}
+        SourceStateDefinition(const std::string& name, VCL::VarDecl* decl, Exposure exposure = Exposure::None) :
+                name{ name }, decl{ decl }, exposure{ exposure } {}
 
         inline const std::string& GetName() const { return name; }
         inline VCL::VarDecl* GetDecl() const { return decl; }
+        /** What the node's UI may do with the variable (`[Expose]`). */
+        inline Exposure GetExposure() const { return exposure; }
 
     private:
         std::string name;
         VCL::VarDecl* decl;
+        Exposure exposure;
     };
 
     class SourceParameterDefinition {
@@ -158,7 +165,8 @@ namespace VCLG {
 
     private:
         SourceNodeDefinition* CreateSourceNodeDefinition(VCL::Source* source);
-        SourcePortDefinition CreateSourcePortDefinition(VCL::VarDecl* varDecl, bool isInput, llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters);
+        SourcePortDefinition CreateSourcePortDefinition(VCL::VarDecl* varDecl, bool isInput, Exposure exposure,
+            llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters);
         SourceParameterDefinition CreateSourceParameterDefinition(VCL::VarDecl* varDecl);
         SourceAutoParameterDefinition CreateSourceAutoParameterDefinition(VCL::NamedDecl* decl);
 

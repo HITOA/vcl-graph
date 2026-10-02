@@ -64,7 +64,10 @@ namespace VCLG {
      * Compiles a graph into one LLVM module (`state-as-data.md` §4, §5): elaborates it (see
      * ElaboratedGraph), translates every source node that runs, plans where each piece of storage
      * lives (SlotPlanner), and emits `Main(ui)` / `Reset(ui)`, which call the nodes' entry points
-     * with their slots. The host allocates and binds what the layout (`GetLayout`) describes.
+     * with their slots, and `InitUI(ui)`, which writes the graph's value of each live input into the
+     * UI block. The host allocates and binds what the layout (`GetLayout`) describes, calls
+     * `InitUI` once, then `Reset`; it reads and writes the exposed variables (`GraphLayout::exposed`)
+     * between calls.
      *
      * Each variant (§7.1) is translated once, its symbols prefixed by its key's hash, and taken from
      * the GraphContext's VariantCache when unchanged. Its instances call one copy of its code, or

@@ -8,6 +8,7 @@ add_executable(vclg_test
     Graph/Editing.cpp
     Graph/Elaboration.cpp
     Graph/Execution.cpp
+    Graph/Expose.cpp
     Graph/Inference.cpp
     Graph/Inputs.cpp
     Graph/Lifetime.cpp

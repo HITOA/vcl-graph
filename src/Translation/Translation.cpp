@@ -87,8 +87,21 @@ namespace {
         const llvm::StructLayout* stateLayout = layout.getStructLayout(stateType);
         interface.stateSize = layout.getTypeAllocSize(stateType);
         interface.stateAlignment = layout.getABITypeAlign(stateType).value();
-        for (uint32_t i = 0; i < stateType->getNumElements(); ++i)
-            interface.stateFields.push_back({ stateLayout->getElementOffset(i), layout.getTypeAllocSize(stateType->getElementType(i)) });
+        llvm::SmallVector<VCL::FieldDecl*, 8> fields{};
+        for (auto it = context.state->Begin(); it != context.state->End(); ++it)
+            if (it->GetDeclClass() == VCL::Decl::FieldDeclClass)
+                fields.push_back((VCL::FieldDecl*)it.Get());
+        if (fields.size() != stateType->getNumElements())
+            return false;
+        uint32_t vectorWidth = cgm.GetTarget().GetVectorWidthInElement();
+        for (uint32_t i = 0; i < stateType->getNumElements(); ++i) {
+            VCLG::NodeInterface::StateField field{};
+            field.offset = stateLayout->getElementOffset(i);
+            field.size = layout.getTypeAllocSize(stateType->getElementType(i));
+            field.type = VCL::TypePrinter::Print(fields[i]->GetType());
+            field.format = VCLG::ValueFormat::Describe(fields[i]->GetType().GetType(), field.size, vectorWidth);
+            interface.stateFields.push_back(std::move(field));
+        }
 
         // The process entry point's parameters: `self`, then the ports.
         llvm::SmallVector<VCL::ParamDecl*, 8> params{};

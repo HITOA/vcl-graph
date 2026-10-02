@@ -22,8 +22,9 @@ namespace VCLG {
 
     /**
      * Emits a frame from its slot plan (`state-as-data.md` §5.4-§5.7): `Main(ui)`, which calls
-     * every node's processing entry point with its slots, and `Reset(ui)`, which runs each node's
-     * `__Init` and `[NodeReset]` and initializes the feedback regions. Only the root frame so far:
+     * every node's processing entry point with its slots, `Reset(ui)`, which runs each node's
+     * `__Init` and `[NodeReset]` and initializes the feedback regions, and `InitUI(ui)`, which
+     * writes the graph's value of each live input into the UI block. Only the root frame so far:
      * host slots are external globals the host binds (the layout's symbols).
      */
     class CodeGenFrame {
@@ -33,11 +34,13 @@ namespace VCLG {
 
         bool EmitMain();
         bool EmitReset();
+        bool EmitInitUI();
 
     private:
         using NodeIndex = ElaboratedGraph::NodeIndex;
 
-        llvm::Function* CreateFrameFunction(llvm::StringRef name);
+        /** `void name(ptr ui)`; `ui` is `noalias readonly` unless the function `writesUi`. */
+        llvm::Function* CreateFrameFunction(llvm::StringRef name, bool writesUi = false);
         /** The address of `slot`, in the frame being emitted (temporaries: its alloca). */
         llvm::Value* GetSlot(uint32_t slot);
         llvm::GlobalVariable* GetRegion(uint32_t region);

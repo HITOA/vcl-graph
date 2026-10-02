@@ -24,7 +24,15 @@ namespace VCLG {
         VCL::AttributeDefinition* parameter = nullptr;
         VCL::AttributeDefinition* autoParameter = nullptr;
         VCL::AttributeDefinition* alwaysWritten = nullptr;
+        VCL::AttributeDefinition* expose = nullptr;
     };
+
+    /**
+     * What a node's UI may do with a variable (`[Expose]`, `state-as-data.md` §3.4): nothing, read
+     * it (`[Expose]`, `[Expose(Read)]`), or read and write it (`[Expose(Write)]`,
+     * `[Expose(Read, Write)]`).
+     */
+    enum class Exposure { None, Read, Write };
 
     /**
      * What each module-level declaration of a node is (`state-as-data.md` §4.1, step 3.1): ports,
@@ -73,6 +81,11 @@ namespace VCLG {
         inline bool IsState(const VCL::Decl* decl) const { return GetVarKind(decl) == VarKind::State; }
         inline bool IsEntryPoint(const VCL::FunctionDecl* decl) const { return decl != nullptr && (decl == process || decl == reset); }
         bool IsAlwaysWritten(const VCL::VarDecl* port) const;
+        /**
+         * What `[Expose]` on `decl` allows; None without the attribute. Its arguments are checked
+         * by the rules (CheckNodeRules): here, any `Write` among them means read and write.
+         */
+        Exposure GetExposure(const VCL::Decl* decl) const;
 
     private:
         NodeModel(VCL::TranslationUnitDecl* tu, const NodeAttributes& attributes) : tu{ tu }, attributes{ attributes } {}

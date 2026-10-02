@@ -92,3 +92,62 @@ TEST_CASE_METHOD(Test::GraphTest, "The definition lists the state variables", "[
     REQUIRE(scale->GetParameters().size() == 1);
     REQUIRE(scale->GetPorts().size() == 2);
 }
+
+TEST_CASE_METHOD(Test::GraphTest, "[Expose] rules", "[Translation][Rules][Expose]") {
+    SECTION("An access other than Read and Write") {
+        REQUIRE(Load(*this, "ExposeUnknownAccess") == nullptr);
+        REQUIRE(consumer.HasError("unknown access in [Expose]: expected Read or Write"));
+    }
+    SECTION("An access given as a string") {
+        REQUIRE(Load(*this, "ExposeStringAccess") == nullptr);
+        REQUIRE(consumer.HasError("unknown access in [Expose]"));
+    }
+    SECTION("The same access twice") {
+        REQUIRE(Load(*this, "ExposeDuplicateAccess") == nullptr);
+        REQUIRE(consumer.HasError("access 'Read' is given twice in [Expose]"));
+    }
+    SECTION("[Expose] twice on one variable") {
+        REQUIRE(Load(*this, "ExposeTwice") == nullptr);
+        REQUIRE(consumer.HasError("[Expose] is given twice"));
+    }
+    SECTION("[Expose(Write)] on an output") {
+        REQUIRE(Load(*this, "ExposeWriteOutput") == nullptr);
+        REQUIRE(consumer.HasError("output 'output' can't be [Expose(Write)]"));
+    }
+    SECTION("On a constant, a parameter, an AutoParameter") {
+        REQUIRE(Load(*this, "ExposeConstant") == nullptr);
+        REQUIRE(consumer.HasError("[Expose] can't apply to 'scale': a compile-time value has no run-time storage"));
+        REQUIRE(Load(*this, "ExposeParameter") == nullptr);
+        REQUIRE(consumer.HasError("[Expose] can't apply to 'factor'"));
+        REQUIRE(Load(*this, "ExposeAutoParameter") == nullptr);
+        REQUIRE(consumer.HasError("[Expose] only applies to a variable"));
+    }
+    SECTION("On a function or a struct") {
+        REQUIRE(Load(*this, "ExposeFunction") == nullptr);
+        REQUIRE(consumer.HasError("[Expose] only applies to a variable"));
+        consumer.errors.clear();
+        REQUIRE(Load(*this, "ExposeStruct") == nullptr);
+        INFO((consumer.errors.empty() ? std::string{} : consumer.errors[0]));
+        REQUIRE(consumer.HasError("[Expose] only applies to a variable"));
+    }
+    SECTION("Every allowed spelling, recorded on the definition") {
+        VCLG::SourceNodeDefinition* definition = Load(*this, "ExposeAllowed");
+        INFO((consumer.errors.empty() ? std::string{} : consumer.errors[0]));
+        REQUIRE(definition != nullptr);
+        REQUIRE(consumer.errors.empty());
+        llvm::ArrayRef<VCLG::SourcePortDefinition> ports = definition->GetPorts();
+        REQUIRE(ports.size() == 5);
+        REQUIRE(ports[0].GetExposure() == VCLG::Exposure::Write);
+        REQUIRE(ports[1].GetExposure() == VCLG::Exposure::Write);
+        REQUIRE(ports[2].GetExposure() == VCLG::Exposure::Read);
+        // [AlwaysWritten] with [Expose]: allowed (§3.6).
+        REQUIRE(ports[3].GetExposure() == VCLG::Exposure::Read);
+        REQUIRE(ports[3].IsAlwaysWritten());
+        REQUIRE(ports[4].GetExposure() == VCLG::Exposure::Read);
+        llvm::ArrayRef<VCLG::SourceStateDefinition> state = definition->GetStateVariables();
+        REQUIRE(state.size() == 3);
+        REQUIRE(state[0].GetExposure() == VCLG::Exposure::Read);
+        REQUIRE(state[1].GetExposure() == VCLG::Exposure::Write);
+        REQUIRE(state[2].GetExposure() == VCLG::Exposure::None);
+    }
+}

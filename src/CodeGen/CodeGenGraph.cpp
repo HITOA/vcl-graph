@@ -145,7 +145,7 @@ bool VCLG::CodeGenGraph::Emit() {
                 return std::nullopt;
             return std::make_pair((uint64_t)layout.getTypeAllocSize(converted), (uint64_t)layout.getABITypeAlign(converted).value());
         },
-        cc.GetTarget().GetVectorWidthInByte(), options.planner, error, errorNode);
+        cc.GetTarget().GetVectorWidthInByte(), cc.GetTarget().GetVectorWidthInElement(), options.planner, error, errorNode);
     if (!plan) {
         std::optional<ElaboratedDiagnosticScope> scope{};
         if (errorNode != ElaboratedGraph::Invalid)
@@ -153,9 +153,9 @@ bool VCLG::CodeGenGraph::Emit() {
         return ReportGraphError(error);
     }
 
-    // 3. The root frame: `Main(ui)` and `Reset(ui)` (§5.4-§5.7).
+    // 3. The root frame: `Main(ui)` and `Reset(ui)` (§5.4-§5.7), and `InitUI(ui)`.
     CodeGenFrame frame{ graphContext, cc, module, elaborated, *plan, translatedNodes, options };
-    if (!frame.EmitMain() || !frame.EmitReset())
+    if (!frame.EmitMain() || !frame.EmitReset() || !frame.EmitInitUI())
         return false;
 
     // The entry points and input defaults are only used by the frames: internal, like any node

@@ -28,6 +28,8 @@ VCLG::DefinitionRegistry::DefinitionRegistry(VCL::CompilerContext& cc) :
     attributes.parameter = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Parameter"), 1, 1);
     attributes.autoParameter = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("AutoParameter"), 0, 0);
     attributes.alwaysWritten = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("AlwaysWritten"), 0, 0);
+    // Its arguments are bare identifiers (`Read`, `Write`), checked by the rules.
+    attributes.expose = cc.GetAttributeTable().AddDefinition(cc.GetIdentifierTable().Get("Expose"), 0, 2);
 
     VCL::IdentifierInfo* nodeNameDirectiveIdentifier = cc.GetIdentifierTable().Get("node_name");
     VCL::IdentifierInfo* graphInputDirectiveIdentifier = cc.GetIdentifierTable().Get("set_as_graph_input");
@@ -77,13 +79,13 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
         autoParameters.push_back(CreateSourceAutoParameterDefinition(decl));
     std::vector<SourcePortDefinition> ports{};
     for (VCL::VarDecl* decl : model->GetPorts())
-        ports.push_back(CreateSourcePortDefinition(decl, model->IsInput(decl), autoParameters));
+        ports.push_back(CreateSourcePortDefinition(decl, model->IsInput(decl), model->GetExposure(decl), autoParameters));
     std::vector<SourceParameterDefinition> parameters{};
     for (VCL::VarDecl* decl : model->GetParameters())
         parameters.push_back(CreateSourceParameterDefinition(decl));
     std::vector<SourceStateDefinition> stateVariables{};
     for (VCL::VarDecl* decl : model->GetState())
-        stateVariables.push_back(SourceStateDefinition{ decl->GetIdentifierInfo()->GetName().str(), decl });
+        stateVariables.push_back(SourceStateDefinition{ decl->GetIdentifierInfo()->GetName().str(), decl, model->GetExposure(decl) });
     bool hasInstanceData = !autoParameters.empty();
     for (auto it = tu->Begin(); it != tu->End(); ++it)
         if (it->GetDeclClass() == VCL::Decl::VarDeclClass && !model->IsPort(it.Get()))
@@ -106,7 +108,7 @@ VCLG::SourceNodeDefinition* VCLG::DefinitionRegistry::CreateSourceNodeDefinition
     return definition;
 }
 
-VCLG::SourcePortDefinition VCLG::DefinitionRegistry::CreateSourcePortDefinition(VCL::VarDecl* varDecl, bool isInput,
+VCLG::SourcePortDefinition VCLG::DefinitionRegistry::CreateSourcePortDefinition(VCL::VarDecl* varDecl, bool isInput, Exposure exposure,
         llvm::ArrayRef<SourceAutoParameterDefinition> autoParameters) {
     std::string name = varDecl->GetIdentifierInfo()->GetName().str();
     VCL::AttributeInstance* attribute = varDecl->HasAttribute(isInput ? attributes.input : attributes.output);
@@ -116,7 +118,7 @@ VCLG::SourcePortDefinition VCLG::DefinitionRegistry::CreateSourcePortDefinition(
     bool isDependent = IsPortAutoParameterDependent(type, autoParameters);
     bool isAlwaysWritten = !isInput && varDecl->HasAttribute(attributes.alwaysWritten) != nullptr;
 
-    return SourcePortDefinition{ name, displayName, isInput, varDecl, isDependent, isAlwaysWritten };
+    return SourcePortDefinition{ name, displayName, isInput, varDecl, isDependent, isAlwaysWritten, exposure };
 }
 
 VCLG::SourceParameterDefinition VCLG::DefinitionRegistry::CreateSourceParameterDefinition(VCL::VarDecl* varDecl) {

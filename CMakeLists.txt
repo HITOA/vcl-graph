@@ -32,6 +32,7 @@ add_library(vclg STATIC
     src/CodeGen/SlotPlanner.cpp
     src/Core/Diagnostics.cpp
     src/Core/SubstitutionTable.cpp
+    src/Core/ValueFormat.cpp
     src/Graph/BuiltinNodes.cpp
     src/Graph/Definition.cpp
     src/Graph/Directives.cpp

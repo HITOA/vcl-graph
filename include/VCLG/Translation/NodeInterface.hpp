@@ -1,5 +1,6 @@
 #pragma once
 
+#include <VCLG/Core/ValueFormat.hpp>
 #include <VCLG/Graph/Definition.hpp>
 
 #include <cstdint>
@@ -44,6 +45,9 @@ namespace VCLG {
         struct StateField {
             uint64_t offset = 0;
             uint64_t size = 0;
+            /** The field's type in this variant, printed, and how the host reads its bytes (exposed state, §6.2). */
+            std::string type{};
+            ValueFormat format{};
         };
 
         const SourceNodeDefinition* definition = nullptr;

@@ -103,6 +103,8 @@ namespace Test {
 
         inline void Main() { ((void(*)(const void*))session->Lookup("Main"))(ui.data); }
         inline void Reset() { ((void(*)(const void*))session->Lookup("Reset"))(ui.data); }
+        // Writes the graph's value of each live input into the UI block (Compile does it once).
+        inline void InitUI() { ((void(*)(void*))session->Lookup("InitUI"))(ui.data); }
 
         // A symbol of the module, or one the host binds (AudioOutput...).
         template<typename T>
@@ -115,6 +117,20 @@ namespace Test {
             const VCLG::GraphLayout::Region* region = layout.FindRegion(VCLG::GraphLayout::OutputKey(path, name));
             REQUIRE(region != nullptr);
             return (T*)(state.Bytes() + region->offset);
+        }
+
+        // The exposed variable `name` of the node at `path`, where the layout says the host finds it.
+        template<typename T>
+        inline T* Exposed(const std::string& path, const std::string& name) {
+            const VCLG::GraphLayout::Exposed* entry = layout.FindExposed(path, name);
+            REQUIRE(entry != nullptr);
+            REQUIRE(entry->size >= sizeof(T));
+            switch (entry->location) {
+                case VCLG::GraphLayout::Exposed::Location::State: return (T*)(state.Bytes() + entry->offset);
+                case VCLG::GraphLayout::Exposed::Location::UI: return (T*)(ui.Bytes() + entry->offset);
+                case VCLG::GraphLayout::Exposed::Location::Constant: return Global<T>(entry->symbol);
+            }
+            return nullptr;
         }
 
         // State variable `field` of the node at `path`.
@@ -273,6 +289,7 @@ namespace Test {
             for (const VCLG::GraphLayout::Region& region : compiled.layout.regions)
                 REQUIRE(compiled.session->DefineSymbolPtr(region.symbol, compiled.state.Bytes() + region.offset));
             REQUIRE(compiled.session->SubmitModule(std::move(module)));
+            compiled.InitUI();
             return compiled;
         }
 
