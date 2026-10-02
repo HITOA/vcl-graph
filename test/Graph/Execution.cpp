@@ -112,3 +112,46 @@ TEST_CASE_METHOD(Test::GraphTest, "A feedback loop of a type inferred from AutoP
     REQUIRE(output[0] == 0.25f);
     REQUIRE(output[1] == 0.5f);
 }
+
+TEST_CASE_METHOD(Test::GraphTest, "An initializer the inferred type can't take is dropped", "[Graph][Execution]") {
+    // StereoSource -> PickFirst.A: T is Block<float32, 2>, and B's float initializer (a port knob's
+    // value) doesn't fit it. B starts from zero instead of failing codegen.
+    auto graph = context.CreateInstance();
+    auto* source = AddNode(*graph, "StereoSource");
+    auto* pick = AddNode(*graph, "PickFirst");
+    pick->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
+    REQUIRE(Connect(*graph, source->GetOutputs()[0], pick->GetInputs()[0]) != INVALID_IDENTITY);
+    pick->GetInputs()[1]->SetInitializerOverride(VCL::ConstantScalar{ 3.0f });
+
+    Test::CompiledGraph compiled = Compile(*graph);
+    compiled.Reset();
+    compiled.Main();
+    float* output = compiled.Output<float>(NodePath(*graph, pick), "output");
+    REQUIRE(output[0] == 1.0f);
+    REQUIRE(output[1] == 2.0f);
+}
+
+TEST_CASE_METHOD(Test::GraphTest, "An initializer takes the inferred scalar type", "[Graph][Execution]") {
+    // IntSource (3) -> AddAuto.A: T is int32, and B's float initializer is converted to it.
+    auto graph = context.CreateInstance();
+    auto* source = AddNode(*graph, "IntSource");
+    auto* add = AddNode(*graph, "AddAuto");
+    add->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
+    REQUIRE(Connect(*graph, source->GetOutputs()[0], add->GetInputs()[0]) != INVALID_IDENTITY);
+
+    SECTION("truncated toward zero") {
+        add->GetInputs()[1]->SetInitializerOverride(VCL::ConstantScalar{ 4.7f });
+        Test::CompiledGraph compiled = Compile(*graph);
+        compiled.Reset();
+        compiled.Main();
+        REQUIRE(*compiled.Output<int32_t>(NodePath(*graph, add), "output") == 7);
+    }
+    SECTION("saturated out of range") {
+        add->GetInputs()[1]->SetInitializerOverride(VCL::ConstantScalar{ -1e20f });
+        Test::CompiledGraph compiled = Compile(*graph);
+        compiled.Reset();
+        compiled.Main();
+        // INT32_MIN + 3: the add itself doesn't overflow.
+        REQUIRE(*compiled.Output<int32_t>(NodePath(*graph, add), "output") == std::numeric_limits<int32_t>::min() + 3);
+    }
+}

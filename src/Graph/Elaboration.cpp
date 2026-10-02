@@ -15,8 +15,12 @@
 #include <VCL/Core/SourceManager.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <functional>
+#include <limits>
+#include <optional>
+#include <type_traits>
 #include <unordered_set>
 
 
@@ -434,6 +438,71 @@ bool VCLG::Elaborator::IsConverted(NodeIndex index) const {
     return node.kind == VCLG::Node::NodeKind::SubgraphInput && node.inputs[0].edge && node.inputs[0].edge->converter != nullptr;
 }
 
+// The kind of scalar that gives a value of `type`: the scalar itself, or splat across a vector or
+// lanes (`MakeScalarInitializer`). None for any other type.
+static std::optional<VCL::BuiltinType::Kind> ScalarKindOf(VCL::Type* type) {
+    type = type ? VCL::Type::GetCanonicalType(type) : nullptr;
+    if (type == nullptr)
+        return std::nullopt;
+    if (type->GetTypeClass() == VCL::Type::VectorTypeClass)
+        type = ((VCL::VectorType*)type)->GetElementType().GetType();
+    else if (type->GetTypeClass() == VCL::Type::LanesTypeClass)
+        type = ((VCL::LanesType*)type)->GetElementType().GetType();
+    type = VCL::Type::GetCanonicalType(type);
+    if (type == nullptr || type->GetTypeClass() != VCL::Type::BuiltinTypeClass)
+        return std::nullopt;
+    return ((VCL::BuiltinType*)type)->GetKind();
+}
+
+// `value` as a `To`, as a C++ cast, except that a floating-point value out of an integer's range
+// saturates (and NaN gives zero) rather than being undefined.
+template<typename To, typename From>
+static To CastScalar(From value) {
+    if constexpr (std::is_integral_v<To> && std::is_floating_point_v<From>) {
+        if (std::isnan(value))
+            return 0;
+        if (value <= (From)std::numeric_limits<To>::lowest())
+            return std::numeric_limits<To>::lowest();
+        if (value >= (From)std::numeric_limits<To>::max())
+            return std::numeric_limits<To>::max();
+    }
+    return (To)value;
+}
+
+template<typename From>
+static std::optional<VCL::ConstantScalar> ConvertScalar(From value, VCL::BuiltinType::Kind kind) {
+    switch (kind) {
+        case VCL::BuiltinType::Float32: return VCL::ConstantScalar{ CastScalar<float>(value) };
+        case VCL::BuiltinType::Float64: return VCL::ConstantScalar{ CastScalar<double>(value) };
+        case VCL::BuiltinType::Int8: return VCL::ConstantScalar{ CastScalar<int8_t>(value) };
+        case VCL::BuiltinType::Int16: return VCL::ConstantScalar{ CastScalar<int16_t>(value) };
+        case VCL::BuiltinType::Int32: return VCL::ConstantScalar{ CastScalar<int32_t>(value) };
+        case VCL::BuiltinType::Int64: return VCL::ConstantScalar{ CastScalar<int64_t>(value) };
+        case VCL::BuiltinType::UInt8: return VCL::ConstantScalar{ CastScalar<uint8_t>(value) };
+        case VCL::BuiltinType::UInt16: return VCL::ConstantScalar{ CastScalar<uint16_t>(value) };
+        case VCL::BuiltinType::UInt32: return VCL::ConstantScalar{ CastScalar<uint32_t>(value) };
+        case VCL::BuiltinType::UInt64: return VCL::ConstantScalar{ CastScalar<uint64_t>(value) };
+        default: return std::nullopt;
+    }
+}
+
+// `value` as a scalar of `kind`; none when either kind has no constant (`void`, `bool`).
+static std::optional<VCL::ConstantScalar> ConvertScalar(const VCL::ConstantScalar& value, VCL::BuiltinType::Kind kind) {
+    switch (value.GetKind()) {
+        case VCL::BuiltinType::Float32: return ConvertScalar(value.Get<float>(), kind);
+        case VCL::BuiltinType::Float64: return ConvertScalar(value.Get<double>(), kind);
+        case VCL::BuiltinType::Int8: return ConvertScalar(value.Get<int8_t>(), kind);
+        case VCL::BuiltinType::Int16: return ConvertScalar(value.Get<int16_t>(), kind);
+        case VCL::BuiltinType::Int32: return ConvertScalar(value.Get<int32_t>(), kind);
+        case VCL::BuiltinType::Int64: return ConvertScalar(value.Get<int64_t>(), kind);
+        case VCL::BuiltinType::UInt8: return ConvertScalar(value.Get<uint8_t>(), kind);
+        case VCL::BuiltinType::UInt16: return ConvertScalar(value.Get<uint16_t>(), kind);
+        case VCL::BuiltinType::UInt32: return ConvertScalar(value.Get<uint32_t>(), kind);
+        case VCL::BuiltinType::UInt64: return ConvertScalar(value.Get<uint64_t>(), kind);
+        default: return std::nullopt;
+    }
+}
+
 bool VCLG::Elaborator::Check() {
     for (NodeIndex index = 0; index < result.nodes.size(); ++index) {
         ElaboratedGraph::Node& node = result.nodes[index];
@@ -464,6 +533,22 @@ bool VCLG::Elaborator::Check() {
         for (ElaboratedGraph::Output& output : node.outputs)
             if (!output.isDependent && output.type == nullptr)
                 output.type = output.declaredType;
+    }
+
+    // An initializer is a scalar of the port's declared type, or of whatever the user gave it. It's
+    // converted to the scalar of the type the port resolved to (an `int32` port of a variant given
+    // `3.7` takes 3). A type no scalar gives (an `AudioBlock` for a port declared `float32`) drops
+    // it: the input starts from the variant's own default instead.
+    for (ElaboratedGraph::Node& node : result.nodes) {
+        for (ElaboratedGraph::Input& input : node.inputs) {
+            if (!input.initializer)
+                continue;
+            std::optional<VCL::BuiltinType::Kind> kind = ScalarKindOf(ElaboratedGraph::TypeOf(input));
+            if (!kind)
+                input.initializer.reset();
+            else if (*kind != input.initializer->GetKind())
+                input.initializer = ConvertScalar(*input.initializer, *kind);
+        }
     }
     return true;
 }
