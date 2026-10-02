@@ -14,6 +14,7 @@
 #include <VCL/AST/TypePrinter.hpp>
 #include <VCL/Core/SourceManager.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <functional>
 #include <unordered_set>
@@ -86,6 +87,35 @@ namespace VCLG {
         llvm::DenseMap<NodeIndex, llvm::SmallVector<NodeIndex, 2>> feedbackReaders{};
     };
 
+}
+
+namespace {
+
+    // As Elaborator::Flatten: a use's scope path is its parent's plus "/n<SubgraphNode identity>",
+    // a node's path its scope's plus "/n<identity>".
+    void CollectNodePaths(VCLG::GraphInstance& graph, const std::string& scope, const VCLG::GraphInstance& target,
+            VCLG::Identity node, std::vector<const VCLG::GraphInstance*>& stack, std::vector<std::string>& paths) {
+        if (std::find(stack.begin(), stack.end(), &graph) != stack.end())
+            return;
+        stack.push_back(&graph);
+        if (&graph == &target)
+            paths.push_back(scope + "/n" + std::to_string(node));
+        for (VCLG::Node* child : graph.GetNodes()) {
+            auto* use = llvm::dyn_cast<VCLG::SubgraphNode>(child);
+            std::shared_ptr<VCLG::GraphInstance> subgraph = use ? use->GetGraph() : nullptr;
+            if (subgraph)
+                CollectNodePaths(*subgraph, scope + "/n" + std::to_string(child->GetIdentity()), target, node, stack, paths);
+        }
+        stack.pop_back();
+    }
+
+}
+
+std::vector<std::string> VCLG::FindNodePaths(GraphInstance& root, const GraphInstance& graph, Identity node) {
+    std::vector<std::string> paths{};
+    std::vector<const GraphInstance*> stack{};
+    CollectNodePaths(root, "g" + std::to_string(root.GetIdentity()), graph, node, stack, paths);
+    return paths;
 }
 
 VCLG::ElaboratedGraph VCLG::Elaborate(GraphInstance& root) {

@@ -53,6 +53,12 @@ namespace VCLG {
         const SourceNodeDefinition* definition = nullptr;
         /** Hash of the source text the variant was compiled from: edited source, new signature (§6.3). */
         uint64_t sourceHash = 0;
+        /**
+         * Hash of the variant's key (`VariantKey`): the source, and the values of the parameters
+         * and AutoParameters. What a `[NodeReset]` computed from them is only valid for these
+         * values, so state and outputs migrate only within one variant (§6.3).
+         */
+        uint64_t variantHash = 0;
 
         /** Symbols of the entry points; `reset` is empty when the node has no `[NodeReset]`. */
         std::string process{};

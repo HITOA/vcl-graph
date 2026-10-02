@@ -126,7 +126,9 @@ TEST_CASE_METHOD(Test::GraphTest, "A counter resets when its source changes", "[
     }
 }
 
-TEST_CASE_METHOD(Test::GraphTest, "A parameter resets the node only when it changes the state's shape", "[Graph][Migration]") {
+TEST_CASE_METHOD(Test::GraphTest, "A parameter change resets the node", "[Graph][Migration]") {
+    // A [NodeReset] may compute anything from the parameters: state and outputs only migrate
+    // within one variant, whether or not the parameter changes their shape.
     auto graph = context.CreateInstance();
     auto* accumulator = AddNode(*graph, "Migration/Accumulator");
     accumulator->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
@@ -138,24 +140,55 @@ TEST_CASE_METHOD(Test::GraphTest, "A parameter resets the node only when it chan
         before.Main();
     REQUIRE(*before.Output<float>(path, "output") == 3.0f);
 
-    SECTION("a parameter that keeps the shape keeps the state") {
+    SECTION("a parameter that keeps the shape") {
         FindParameter(accumulator, "Step")->SetInitializerOverride(VCL::ConstantScalar{ 10.0f });
-        Test::CompiledGraph after = Compile(*graph);
-        after.Reset();
-        Migrate(before, after);
-        after.Main();
-        CHECK(*after.Output<float>(path, "output") == 13.0f);
-    }
-    SECTION("a parameter that changes the shape resets it") {
-        FindParameter(accumulator, "Size")->SetInitializerOverride(VCL::ConstantScalar{ (uint32_t)8 });
         Test::CompiledGraph after = Compile(*graph);
         after.Reset();
         CHECK(after.layout.FindRegion(VCLG::GraphLayout::StateKey(path))->signature
             != before.layout.FindRegion(VCLG::GraphLayout::StateKey(path))->signature);
         Migrate(before, after);
         after.Main();
+        CHECK(*after.Output<float>(path, "output") == 10.0f);
+    }
+    SECTION("a parameter that changes the shape") {
+        FindParameter(accumulator, "Size")->SetInitializerOverride(VCL::ConstantScalar{ (uint32_t)8 });
+        Test::CompiledGraph after = Compile(*graph);
+        after.Reset();
+        Migrate(before, after);
+        after.Main();
         CHECK(*after.Output<float>(path, "output") == 1.0f);
     }
+    SECTION("the same value again keeps the state") {
+        FindParameter(accumulator, "Step")->SetInitializerOverride(VCL::ConstantScalar{ 1.0f });
+        Test::CompiledGraph after = Compile(*graph);
+        after.Reset();
+        Migrate(before, after);
+        after.Main();
+        CHECK(*after.Output<float>(path, "output") == 4.0f);
+    }
+}
+
+TEST_CASE_METHOD(Test::GraphTest, "What a reset computed from a parameter follows the parameter", "[Graph][Migration]") {
+    // Grog's EQ filters compute their coefficients in [NodeReset] from parameters, into an output
+    // and state that Process never rewrites: a migrated copy would keep the old coefficients.
+    auto graph = context.CreateInstance();
+    auto* node = AddNode(*graph, "Migration/ResetCoefficient");
+    node->AddFlag(VCLG::Node::NodeFlag::IsOutputNode);
+    std::string path = NodePath(*graph, node);
+
+    Test::CompiledGraph before = Compile(*graph);
+    before.Reset();
+    before.Main();
+    REQUIRE(*before.Output<float>(path, "output") == 2.0f);
+    REQUIRE(*before.Output<float>(path, "coeff") == 20.0f);
+
+    FindParameter(node, "Gain")->SetInitializerOverride(VCL::ConstantScalar{ 3.0f });
+    Test::CompiledGraph after = Compile(*graph);
+    after.Reset();
+    Migrate(before, after);
+    after.Main();
+    CHECK(*after.Output<float>(path, "output") == 3.0f);
+    CHECK(*after.Output<float>(path, "coeff") == 30.0f);
 }
 
 TEST_CASE_METHOD(Test::GraphTest, "A held output keeps its value", "[Graph][Migration]") {

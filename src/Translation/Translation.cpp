@@ -338,6 +338,7 @@ std::optional<VCLG::TranslatedNode> VCLG::TranslateSourceNode(GraphContext& grap
     NodeInterface& interface = translated.interface;
     interface.definition = node.definition;
     interface.sourceHash = llvm::xxh3_64bits(source->GetBufferRef().getBuffer());
+    interface.variantHash = translated.key.hash;
     interface.process = ast.GetMangledName(context.process);
     interface.reset = context.reset ? ast.GetMangledName(context.reset) : std::string{};
     interface.init = ast.GetMangledName(context.init);

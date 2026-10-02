@@ -63,6 +63,9 @@ namespace VCLG {
         struct UiEntry {
             /** `<node path>.<input>` (InputKey). */
             std::string key{};
+            /** The input's type in this compile, printed, and how its bytes read (the host encodes the values it writes). */
+            std::string type{};
+            ValueFormat format{};
             uint64_t offset = 0;
             uint64_t size = 0;
             uint64_t alignment = 1;
@@ -121,6 +124,17 @@ namespace VCLG {
             for (const UiEntry& entry : uiEntries)
                 if (entry.key == key)
                     return &entry;
+            return nullptr;
+        }
+
+        /** The UI block entry of input `input` of the node at `node`, or null. Doesn't allocate. */
+        inline const UiEntry* FindUiEntry(llvm::StringRef node, llvm::StringRef input) const {
+            for (const UiEntry& entry : uiEntries) {
+                llvm::StringRef key = entry.key;
+                if (key.size() == node.size() + 1 + input.size() && key.starts_with(node) && key[node.size()] == '.'
+                        && key.ends_with(input))
+                    return &entry;
+            }
             return nullptr;
         }
 

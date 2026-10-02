@@ -138,7 +138,7 @@ namespace {
         }
 
         uint64_t StateSignature(const ElaboratedGraph::Node& node, const VCLG::NodeInterface& interface) const {
-            std::string text = "state " + Lineage(node.scope) + " source " + std::to_string(interface.sourceHash)
+            std::string text = "state " + Lineage(node.scope) + " variant " + std::to_string(interface.variantHash)
                 + " size " + std::to_string(interface.stateSize) + " align " + std::to_string(interface.stateAlignment);
             for (const VCLG::NodeInterface::StateField& field : interface.stateFields)
                 text += " " + std::to_string(field.offset) + "+" + std::to_string(field.size);
@@ -149,7 +149,7 @@ namespace {
                 uint64_t size, uint64_t alignment) const {
             std::string text = std::string{ kind } + " " + Lineage(node.scope);
             if (interface != nullptr)
-                text += " source " + std::to_string(interface->sourceHash);
+                text += " variant " + std::to_string(interface->variantHash);
             text += " type " + (type ? VCL::TypePrinter::Print(type) : std::string{ "?" })
                 + " size " + std::to_string(size) + " align " + std::to_string(alignment);
             return Signature(text);
@@ -187,6 +187,8 @@ namespace {
             if (slotClass == SlotPlan::SlotClass::UiEntry) {
                 GraphLayout::UiEntry entry{};
                 entry.key = name;
+                entry.type = type ? VCL::TypePrinter::Print(type) : std::string{};
+                entry.format = VCLG::ValueFormat::Describe(type, slot.size, vectorWidth);
                 entry.size = slot.size;
                 entry.alignment = slot.alignment;
                 plan.layout.uiEntries.push_back(std::move(entry));

@@ -191,4 +191,11 @@ namespace VCLG {
      */
     ElaboratedGraph Elaborate(GraphInstance& root);
 
+    /**
+     * The paths `Elaborate(root)` gives the copies of node `node` of `graph`: one per use of
+     * `graph`, through nested uses; the node's own path when `graph` is `root`; none when `graph`
+     * isn't used. Walks the graphs only (no inference), so it's cheap.
+     */
+    std::vector<std::string> FindNodePaths(GraphInstance& root, const GraphInstance& graph, Identity node);
+
 }
